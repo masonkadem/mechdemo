@@ -1,0 +1,17 @@
+{
+  "test_mae_sbp": 14.286623001098633,
+  "test_mae_dbp": 9.283467292785645,
+  "baseline_mae_sbp": 15.070598602294922,
+  "baseline_mae_dbp": 9.503774642944336,
+  "cal_mae_sbp": 11.122678756713867,
+  "cal_mae_dbp": 6.147639751434326,
+  "ptt_median_ms": 384.0,
+  "ptt_valid_frac": 0.99,
+  "probe_ptt_r2": 0.12942491121605093,
+  "probe_ptt_shuffled_r2": 0.0013110229463139111,
+  "probe_sbp_r2": 0.051661908626556396,
+  "dBP_dPTT_sbp": 3.963717392512867,
+  "frac_correct_sign": 0.39866666666666667,
+  "resp_range_mmHg": 1.6270586252212524,
+  "n_test": 2500
+}
