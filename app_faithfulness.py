@@ -247,8 +247,13 @@ with tab_cap:
             st.caption("Mechanism battery — frac of segments responding in the physiological direction")
             names = list(cues.keys())
             fr = [cues[n]["frac_mean"] for n in names]; er = [cues[n]["frac_std"] for n in names]
-            cols = [GREEN if (cues[n]["expect_sign"] != 0 and cues[n]["frac_mean"] > 0.5)
-                    else (RED if cues[n]["expect_sign"] != 0 else GREY) for n in names]
+            def barcol(c):  # robust to seed noise: significance uses the +/-std band
+                if c["expect_sign"] == 0:
+                    return GREY
+                if c["frac_mean"] - c["frac_std"] > 0.5:  return GREEN   # robustly used
+                if c["frac_mean"] + c["frac_std"] < 0.5:  return RED     # robustly not used
+                return GREY                                              # indistinct from chance
+            cols = [barcol(cues[n]) for n in names]
             fig, ax = plt.subplots(figsize=(5.2, 3.2))
             ax.barh(range(len(names)), fr, xerr=er, color=cols, error_kw=dict(lw=.8, ecolor="#555"))
             ax.axvline(0.5, color="k", ls=":", lw=1)
@@ -269,28 +274,36 @@ with tab_cap:
         md = "| cue | decodable (probe R²) | causally used (frac ± std) |\n|---|---|---|\n"
         for name, val in rows:
             used = f"{val['frac_mean']:.2f} ± {val['frac_std']:.2f}"
-            flag = " ✅" if (val["expect_sign"] != 0 and val["frac_mean"] > 0.5) else ""
-            md += f"| {name} | {val['probe_mean']:.2f} | {used}{flag} |\n"
+            if val["expect_sign"] != 0 and val["frac_mean"] - val["frac_std"] > 0.5:
+                tag = " ✅ used"
+            elif val["expect_sign"] != 0 and val["frac_mean"] + val["frac_std"] < 0.5:
+                tag = " ✗ not used"
+            else:
+                tag = " ~ chance"
+            md += f"| {name} | {val['probe_mean']:.2f} | {used}{tag} |\n"
         st.markdown(md)
         st.caption("Shape cues are physiologically real — PPG-derived vs ground-truth ABP-derived: "
                    + ", ".join(f"{k} r={cval[k]:+.2f}" for k in ["rise", "aix", "apg"] if k in cval)
-                   + ". The audit discriminates *on the same model* — so a null on PAT is a real "
+                   + ". The audit discriminates *on the same model* — a robust null on PAT is a real "
                      "verdict, not a blind instrument.")
 
         pat = cues.get("PAT (arrival time)", {})
-        morph = [(n, v) for n, v in cues.items() if v["expect_sign"] != 0 and "morphology" in n
-                 and v["frac_mean"] > 0.5]
-        pat_f = pat.get("frac_mean", float("nan"))
-        if morph and np.isfinite(pat_f) and pat_f < 0.5:
-            best = max(morph, key=lambda nv: nv[1]["frac_mean"])
-            st.success(
-                f"**These models are pulse-wave-analysis estimators, not transit-time estimators.** "
-                f"Across {C['n_seeds']} seeds the causal audit finds arrival time (PAT) is *not* used "
-                f"(frac {pat_f:.2f} < 0.5) while a wave-shape / stiffness cue **is** "
-                f"({best[0].split(' (')[0]}, frac {best[1]['frac_mean']:.2f} > 0.5). The mechanism the "
-                "network relies on is the pressure-wave morphology ECG+PPG actually carries — the audit "
-                "tells us faithful *to what*, not merely yes/no.")
+        pat_f, pat_s = pat.get("frac_mean", float("nan")), pat.get("frac_std", 0.0)
+        top = max(cues.items(), key=lambda kv: kv[1]["probe_mean"])
+        used = [n for n, v in cues.items()
+                if v["expect_sign"] != 0 and v["frac_mean"] - v["frac_std"] > 0.5]
+        if np.isfinite(pat_f) and pat_f + pat_s < 0.5 and not used:
+            st.error(
+                f"**Decodable ≠ used — and it's the *most decodable* cue that goes unused.** Across "
+                f"{C['n_seeds']} seeds the most linearly decodable cue is **{top[0].split(' (')[0]}** "
+                f"(probe R² {top[1]['probe_mean']:.2f}), yet arrival time is robustly **not** causally "
+                f"used (frac {pat_f:.2f} ± {pat_s:.2f}, below chance). And **no** scalar physiological "
+                "cue we tested is robustly used — the model reaches "
+                f"{C['mae_cal_dbp']:.1f} mmHg DBP MAE without routing through any single interpretable "
+                "index. Faithfulness is causal, and a linear probe (or reconstruction fidelity) cannot "
+                "stand in for it.")
         else:
             st.info(
-                f"Across {C['n_seeds']} seeds: PAT frac {pat_f:.2f}. Decodability and causal use come "
-                "apart cue-by-cue — the causal audit is the only thing that separates them.")
+                f"Across {C['n_seeds']} seeds: PAT frac {pat_f:.2f} ± {pat_s:.2f}. Robustly-used cues: "
+                f"{', '.join(n.split(' (')[0] for n in used) if used else 'none'}. Decodability and "
+                "causal use come apart cue-by-cue — only the causal audit separates them.")
