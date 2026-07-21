@@ -293,10 +293,16 @@ with tab_cap:
                 ax.set_xlabel("frac in expected physiological direction"); ax.set_xlim(0, 1)
                 ax.invert_yaxis(); fig.tight_layout(); st.pyplot(fig)
         with p2[1]:
-            st.caption("Shape cues are real — PPG-derived vs ground-truth ABP-derived:")
-            st.markdown("\n".join(
-                f"- {k}: r = {cval[k]:+.2f}" for k in ["rise", "aix", "apg"] if k in cval))
-            st.caption("Green bars pass chance (0.5): the model causally uses those cues.")
+            if prof:
+                st.caption("Decodable ≠ used — cues ranked by decodability:")
+                rows = sorted(prof.items(), key=lambda kv: -kv[1].get("probe_r2", 0.0))
+                md = "| cue | decodable R² | used (frac) |\n|---|---|---|\n"
+                for name, val in rows:
+                    short = name.split(" (")[0]
+                    md += f"| {short} | {val.get('probe_r2', 0.0):.2f} | {val['frac_correct']:.2f} |\n"
+                st.markdown(md)
+            st.caption("Shape cues validate vs ground-truth ABP: "
+                       + ", ".join(f"{k} r={cval[k]:+.2f}" for k in ["rise", "aix", "apg"] if k in cval))
 
         # data-driven verdict
         morph_fracs = [prof[n]["frac_correct"] for n in prof

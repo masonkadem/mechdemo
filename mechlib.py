@@ -279,8 +279,13 @@ def mechanism_profile(feats, head, scalars, target=1):
     specs = [("PAT (arrival time)", "pat", -1), ("PPG rise-time (morphology)", "rise", -1),
              ("augmentation index (morphology)", "aix", +1), ("APG stiffness (morphology)", "apg", +1),
              ("heart rate", "hr", 0), ("PPG amplitude (control)", "amp", 0)]
-    return {name: {**subspace_swap(feats, head, scalars[key], target, sgn), "expect_sign": sgn}
-            for name, key, sgn in specs if key in scalars}
+
+    def entry(key, sgn):
+        s = subspace_swap(feats, head, scalars[key], target, sgn)
+        s["expect_sign"] = sgn
+        s["probe_r2"] = max(linear_probe(feats, scalars[key]), 0.0)   # how DECODABLE the cue is
+        return s
+    return {name: entry(key, sgn) for name, key, sgn in specs if key in scalars}
 
 
 def linear_probe(feats, target):
