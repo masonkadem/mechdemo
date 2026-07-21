@@ -24,8 +24,19 @@ ECG, PPG, ABP = mechlib.ECG, mechlib.PPG, mechlib.ABP
 
 d = mechlib.load_mini("data/vitaldb_mini.npz"); fs = int(d["fs"])
 Xtr = mechlib.normalize(d["Xtr"][:, :, [ECG, PPG]]); ytr = d["ytr"]
-Xte = mechlib.normalize(d["Xte"][:, :, [ECG, PPG]]); yte = d["yte"]
+Xte = mechlib.normalize(d["Xte"][:, :, [ECG, PPG]]); yte = d["yte"]; gte = d["gte"]
 L = Xtr.shape[1]
+
+
+def center_by_group(v, g):
+    """Remove each subject's mean (per-subject calibration): the space where the model is
+    actually accurate. A single amplitude-normalized window cannot fix absolute BP, so all
+    R^2 must be measured on within-subject variation."""
+    out = np.asarray(v, dtype=np.float64).copy()
+    for gid in np.unique(g):
+        idx = g == gid
+        out[idx] -= out[idx].mean(0)
+    return out
 
 
 def stdz_wave(w):
@@ -109,24 +120,36 @@ def r2(pred, true):
     return float(1 - ((true - pred) ** 2).sum() / (((true - true.mean(0)) ** 2).sum() + 1e-9))
 
 
+def corr2(pred, true):
+    """Squared Pearson correlation, clipped at 0 (anti-correlation = not faithful). Robust to
+    the additive shortcut-on-base variance that makes raw R^2 brittle when the signal is weak."""
+    a = np.asarray(pred, float) - np.mean(pred); b = np.asarray(true, float) - np.mean(true)
+    denom = np.sqrt((a * a).sum() * (b * b).sum()) + 1e-9
+    c = float((a * b).sum() / denom)
+    return c * c if c > 0 else 0.0
+
+
 def sweep_metrics(alpha, P, RP, SP, morph_probe_target, n_pairs=1500, seed=0):
-    ys = (yte - y_mu) / y_sd
-    bp = alpha * RP + (1 - alpha) * SP
-    acc = r2((bp - y_mu) / y_sd, ys)                               # standardized, both targets
-    mae_dbp = float(np.abs(bp[:, 1] - yte[:, 1]).mean())
+    # everything on within-subject (per-subject-centered) DBP -- where the model is accurate
+    yc = center_by_group(yte[:, 1], gte)
+    RPc = center_by_group(RP[:, 1], gte); SPc = center_by_group(SP[:, 1], gte)
+    bp = alpha * RPc + (1 - alpha) * SPc
+    acc = corr2(bp, yc)                                            # within-subject DBP (corr^2)
+    mae_dbp = float(np.abs((alpha * RP[:, 1] + (1 - alpha) * SP[:, 1]) - yte[:, 1]).mean())
     probe = mechlib.linear_probe(P, morph_probe_target)           # morphology decodable from feats
     rng = np.random.default_rng(seed)
     base = rng.integers(0, len(P), n_pairs); donor = rng.integers(0, len(P), n_pairs)
-    bp_sw = alpha * RP[donor, 1] + (1 - alpha) * SP[base, 1]       # swap recon pathway to donor
-    swap = r2(bp_sw, yte[donor, 1])                                # follows donor's true DBP?
-    return {"acc": acc, "mae_dbp": mae_dbp, "probe_morph": probe, "swap": max(swap, 0.0)}
+    bp_sw = alpha * RPc[donor] + (1 - alpha) * SPc[base]           # swap recon pathway to donor
+    swap = corr2(bp_sw, yc[donor])                                 # follows donor's within-subj DBP?
+    return {"acc": acc, "mae_dbp": mae_dbp, "probe_morph": max(probe, 0.0), "swap": swap}
 
 
-print(f"training alpha sweep {ALPHAS} (lambda={LAM}) ...", flush=True)
-morph_target = morph_abp["rise"]                                   # ground-truth morphology scalar
-sweep = {"acc": [], "mae_dbp": [], "probe_morph": [], "swap": []}
-overlay = None; prof = None; recon1 = None
-for al in ALPHAS:
+def run():
+  print(f"training alpha sweep {ALPHAS} (lambda={LAM}) ...", flush=True)
+  morph_target = scalars_te["rise"]                                # PPG morphology cue (decodable)
+  sweep = {"acc": [], "mae_dbp": [], "probe_morph": [], "swap": []}
+  overlay = None; prof = None; recon1 = None
+  for al in ALPHAS:
     net = train(al); P, R, RP, SP, rc = collect(net)
     m = sweep_metrics(al, P, RP, SP, morph_target)
     for k in sweep:
@@ -141,29 +164,31 @@ for al in ALPHAS:
             abp1 = net.parts(torch.tensor(Xte[:1], device=device))[2].cpu().numpy()[0]
         overlay = (Ate[0], abp1)
 
-# validate PPG-derived shape cues against ground-truth ABP-derived ones
-cue_val = {}
-for cue in ["rise", "aix", "apg"]:
+  cue_val = {}                                                    # PPG cue vs ground-truth ABP cue
+  for cue in ["rise", "aix", "apg"]:
     p, a = scalars_te[cue], morph_abp[cue]; mm = np.isfinite(p) & np.isfinite(a)
     cue_val[cue] = float(np.corrcoef(p[mm], a[mm])[0, 1]) if mm.sum() > 10 else float("nan")
-print("cue validation (PPG vs ground-truth ABP):", {k: round(v, 2) for k, v in cue_val.items()}, flush=True)
+  print("cue validation (PPG vs ground-truth ABP):", {k: round(v, 2) for k, v in cue_val.items()}, flush=True)
 
-# analytic PAT->DBP control (is the arrival-time law even the right sign here?)
-mtr = np.isfinite(ptt_tr); coef = np.polyfit(ptt_tr[mtr], ytr[mtr, 1], 1)
-dbp_mean, sbp_mean = ytr[:, 1].mean(), ytr[:, 0].mean()
-def analytic_fn(Xr):
+  mtr = np.isfinite(ptt_tr); coef = np.polyfit(ptt_tr[mtr], ytr[mtr, 1], 1)   # analytic PAT->DBP
+  dbp_mean, sbp_mean = ytr[:, 1].mean(), ytr[:, 0].mean()
+  def analytic_fn(Xr):
     p = mechlib.compute_ptt(Xr, fs, 0, 1)
     return np.stack([np.full(len(Xr), sbp_mean),
                      np.where(np.isfinite(p), coef[0] * p + coef[1], dbp_mean)], 1).astype(np.float32)
-au = mechlib.causal_ptt_audit(None, d["Xte"][:, :, [ECG, PPG]], fs, device, ppg_pos=1, predict_fn=analytic_fn)
-analytic = {"in_dbp_slope": au["dbp"]["dBP_dPTT"], "fit_slope_mmHg_per_ms": float(coef[0] * 1e-3)}
-print(f"analytic PAT->DBP fit slope {coef[0]*1e-3:+.3f} mmHg/ms  audit slope {au['dbp']['dBP_dPTT']:+.2f}", flush=True)
+  au = mechlib.causal_ptt_audit(None, d["Xte"][:, :, [ECG, PPG]], fs, device, ppg_pos=1, predict_fn=analytic_fn)
+  analytic = {"in_dbp_slope": au["dbp"]["dBP_dPTT"], "fit_slope_mmHg_per_ms": float(coef[0] * 1e-3)}
+  print(f"analytic PAT->DBP fit slope {coef[0]*1e-3:+.3f} mmHg/ms  audit slope {au['dbp']['dBP_dPTT']:+.2f}", flush=True)
 
-res = {"lambda": LAM, "alphas": ALPHAS, "sweep": sweep, "recon_corr": recon1,
-       "profile": prof, "cue_validation": cue_val, "analytic": analytic}
-json.dump(res, open("data/capstone.json", "w"), indent=2)
-np.savez_compressed("data/capstone.npz",
-    alphas=np.array(ALPHAS), acc=np.array(sweep["acc"]),
-    probe_morph=np.array(sweep["probe_morph"]), swap=np.array(sweep["swap"]),
-    t=np.arange(L) / fs, abp_true=overlay[0], abp_recon=overlay[1])
-print("wrote data/capstone.json + .npz", flush=True); print("DONE", flush=True)
+  res = {"lambda": LAM, "alphas": ALPHAS, "sweep": sweep, "recon_corr": recon1,
+         "profile": prof, "cue_validation": cue_val, "analytic": analytic}
+  json.dump(res, open("data/capstone.json", "w"), indent=2)
+  np.savez_compressed("data/capstone.npz",
+      alphas=np.array(ALPHAS), acc=np.array(sweep["acc"]),
+      probe_morph=np.array(sweep["probe_morph"]), swap=np.array(sweep["swap"]),
+      t=np.arange(L) / fs, abp_true=overlay[0], abp_recon=overlay[1])
+  print("wrote data/capstone.json + .npz", flush=True); print("DONE", flush=True)
+
+
+if __name__ == "__main__":
+    run()
