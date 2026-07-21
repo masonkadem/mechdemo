@@ -139,6 +139,98 @@ def donor_swap(feats, head, ptt, target=1, n_pairs=1500, seed=0):
             "dPTT_ms": (dPTT * 1000), "dBP": dBP}
 
 
+# ----------------------------------------------------------------- mechanism profile
+def _ppg_fiducials(ppg_z, r_peaks, fs):
+    """Per-beat PPG (foot, systolic-peak) index pairs following each ECG R-peak."""
+    feet, peaks = [], []
+    for rp in r_peaks:
+        lo = rp + max(int(0.05 * fs), 1); hi = min(rp + int(0.5 * fs), len(ppg_z))
+        if lo >= hi:
+            continue
+        foot = lo + int(np.argmin(ppg_z[lo:hi]))
+        hi2 = min(foot + int(0.4 * fs), len(ppg_z))
+        if foot + 1 >= hi2:
+            continue
+        peak = foot + int(np.argmax(ppg_z[foot:hi2]))
+        feet.append(foot); peaks.append(peak)
+    return feet, peaks
+
+
+def segment_scalars(ecg, ppg, fs):
+    """Candidate physiological cues from one ECG+PPG segment (nan where undetectable):
+      pat  -- ECG-R -> PPG-foot delay (s); the arrival-time law (really PAT, PEP-confounded)
+      rise -- PPG systolic rise time (s); a wave-shape / stiffness-morphology cue
+      hr   -- heart rate (bpm) from R-R; exploratory, ambiguous BP sign
+      amp  -- PPG pulse amplitude (au); negative control (removed by per-segment norm)."""
+    ez, pz = _z(ecg), _z(ppg)
+    r, _ = find_peaks(ez, distance=max(int(0.3 * fs), 1), prominence=0.5)
+    out = {"pat": np.nan, "rise": np.nan, "hr": np.nan, "amp": np.nan}
+    if len(r) < 3:
+        return out
+    pats = []
+    for rp in r:
+        lo = rp + max(int(0.05 * fs), 1); hi = min(rp + int(0.5 * fs), len(pz))
+        if lo >= hi:
+            continue
+        ptt = (lo + int(np.argmin(pz[lo:hi])) - rp) / fs
+        if 0.05 < ptt < 0.5:
+            pats.append(ptt)
+    if len(pats) >= 2:
+        out["pat"] = float(np.median(pats))
+    rr = np.diff(r) / fs; rr = rr[(rr > 0.3) & (rr < 2.0)]
+    if len(rr) >= 1:
+        out["hr"] = float(60.0 / np.median(rr))
+    feet, peaks = _ppg_fiducials(pz, r, fs)
+    rts = [(pk - ft) / fs for ft, pk in zip(feet, peaks) if 0.02 < (pk - ft) / fs < 0.4]
+    if len(rts) >= 2:
+        out["rise"] = float(np.median(rts))
+    amps = [pz[pk] - pz[ft] for ft, pk in zip(feet, peaks)]
+    if len(amps) >= 2:
+        out["amp"] = float(np.median(amps))
+    return out
+
+
+def compute_scalars(X, fs, ecg_pos=ECG, ppg_pos=PPG):
+    """Per-segment cue dict {pat, rise, hr, amp} for a batch (N, L, C)."""
+    keys = ["pat", "rise", "hr", "amp"]; acc = {k: [] for k in keys}
+    for i in range(len(X)):
+        s = segment_scalars(X[i, :, ecg_pos], X[i, :, ppg_pos], fs)
+        for k in keys:
+            acc[k].append(s[k])
+    return {k: np.array(v) for k, v in acc.items()}
+
+
+def subspace_swap(feats, head, mech, target=1, expect_sign=-1, n_pairs=1500, seed=0):
+    """Generalized activation-space donor-swap for ANY scalar cue `mech`. Patch only the
+    linearly-decodable direction of `mech` from a donor into a base activation and measure
+    how the BP output moves. `expect_sign` is the physiological sign of dBP/dmech
+    (-1 = longer cue -> lower BP, like PAT/rise; 0 = no expected sign, e.g. HR/control).
+    Returns slope (mmHg per cue-unit) and frac_correct (share of pairs in the expected
+    direction; 0.5 = chance)."""
+    m = np.isfinite(mech); feats, mech = feats[m], mech[m]
+    if len(feats) < 10 or np.std(mech) < 1e-9:
+        return {"slope": float("nan"), "frac_correct": float("nan")}
+    u = probe_direction(feats, mech)
+    rng = np.random.default_rng(seed)
+    base = rng.integers(0, len(feats), n_pairs); donor = rng.integers(0, len(feats), n_pairs)
+    proj = (feats[donor] - feats[base]) @ u
+    dBP = head(feats[base] + np.outer(proj, u))[:, target] - head(feats[base])[:, target]
+    dM = mech[donor] - mech[base]
+    slope = float(np.polyfit(dM, dBP, 1)[0])
+    ref = expect_sign if expect_sign != 0 else 1
+    frac = float(np.mean(np.sign(dBP) == ref * np.sign(dM)))
+    return {"slope": slope, "frac_correct": frac}
+
+
+def mechanism_profile(feats, head, scalars, target=1):
+    """Run subspace_swap across the candidate cues -> 'faithful to WHAT'. `scalars` is the
+    dict from compute_scalars. Expected signs encode the textbook physiology per cue."""
+    specs = [("PAT (arrival time)", "pat", -1), ("PPG rise-time (morphology)", "rise", -1),
+             ("heart rate", "hr", 0), ("PPG amplitude (control)", "amp", 0)]
+    return {name: {**subspace_swap(feats, head, scalars[key], target, sgn), "expect_sign": sgn}
+            for name, key, sgn in specs}
+
+
 def linear_probe(feats, target):
     """Held-out R^2 decoding `target` from `feats` (disjoint fit/score halves)."""
     m = np.isfinite(target); feats, target = feats[m], target[m]
