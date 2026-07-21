@@ -7,3 +7,6 @@ venv/
 # large local caches (the bundled data/vitaldb_mini.npz IS tracked)
 subset_cache.npz
 *.mat
+# local scratch / dev helpers
+scratch_*.py
+*.png
