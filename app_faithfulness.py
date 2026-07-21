@@ -231,94 +231,66 @@ with tab_real:
 # ── FAITHFUL TO WHAT? ─────────────────────────────────────────────────────────
 with tab_cap:
     C, CV = load_capstone()
-    if C is None or "sweep" not in C:
-        st.warning("α-sweep results not found (or stale). Run `python precompute_recon.py`.")
+    if C is None or "cues" not in C:
+        st.warning("Battery results not found (or stale). Run `python precompute_recon.py`.")
     else:
-        sw = C["sweep"]; al = C["alphas"]
+        cues = C["cues"]; cval = C.get("cue_validation", {})
         st.markdown(
-            "Same dial as the synthetic tab — now on the **real** ECG+PPG model. "
-            f"**α sets how much BP is routed through the reconstructed ABP pressure wave** "
-            f"(λ = {C['lambda']:g}); the rest comes from a direct shortcut head:")
-        st.latex(r"BP=\alpha\,\text{head}_{\text{recon}}\!\big(\text{ABP}_{\text{rebuilt}}\big)"
-                 r"+(1-\alpha)\,\text{head}_{\text{shortcut}}(\text{features})")
+            f"A CNN reconstructs the **ABP pressure waveform** from ECG+PPG (corr {C['recon_corr']:.2f}) "
+            f"while predicting BP (calibrated DBP MAE {C['mae_cal_dbp']:.1f} mmHg). We then run the causal "
+            "donor-swap across a **battery of physiological cues** and ask, for each: is it *decodable*, "
+            f"and is it *causally used*?  ({C['n_seeds']} seeds; error bars = ±std.)")
 
-        # headline: the sweep — accuracy & morphology-probe flat, donor-swap tracks alpha
-        g1 = st.columns([3, 2])
-        with g1[0]:
-            st.caption("Three audits vs α  (accuracy & probe flat; only the donor-swap tracks faithfulness)")
-            fig, ax = plt.subplots(figsize=(5, 3))
-            ax.plot(al, sw["swap"], "-o", ms=4, color=NAVY, label="donor-swap (causal)")
-            ax.plot(al, sw["acc"], "-o", ms=4, color=RED, label="accuracy (within-subj)")
-            ax.plot(al, sw["probe_morph"], "-o", ms=4, color=GREY, label="morphology probe")
-            ax.set_xlabel("α  (reliance on reconstructed waveform)"); ax.set_ylabel("score")
-            top = max(0.4, 1.25 * max(sw["swap"] + sw["acc"] + sw["probe_morph"]))
-            ax.set_ylim(0, top); ax.legend(fontsize=8, frameon=False)
-            fig.tight_layout(); st.pyplot(fig)
-        with g1[1]:
-            st.caption(f"ABP reconstruction at α=1 — morphology corr {C['recon_corr']:.2f}")
-            fig, ax = plt.subplots(figsize=(4, 3))
-            ax.plot(CV["t"], CV["abp_true"], color=GREEN, lw=1.4, label="true ABP")
+        # headline: mechanism battery — which cue does the model causally use?
+        g = st.columns([3, 2])
+        with g[0]:
+            st.caption("Mechanism battery — frac of segments responding in the physiological direction")
+            names = list(cues.keys())
+            fr = [cues[n]["frac_mean"] for n in names]; er = [cues[n]["frac_std"] for n in names]
+            cols = [GREEN if (cues[n]["expect_sign"] != 0 and cues[n]["frac_mean"] > 0.5)
+                    else (RED if cues[n]["expect_sign"] != 0 else GREY) for n in names]
+            fig, ax = plt.subplots(figsize=(5.2, 3.2))
+            ax.barh(range(len(names)), fr, xerr=er, color=cols, error_kw=dict(lw=.8, ecolor="#555"))
+            ax.axvline(0.5, color="k", ls=":", lw=1)
+            ax.set_yticks(range(len(names)))
+            ax.set_yticklabels([n.replace(" (", "\n(") for n in names], fontsize=7.5)
+            ax.set_xlabel("causally used  (frac in expected direction; 0.5 = chance)")
+            ax.set_xlim(0, 1); ax.invert_yaxis(); fig.tight_layout(); st.pyplot(fig)
+        with g[1]:
+            st.caption(f"ABP reconstruction — morphology corr {C['recon_corr']:.2f}")
+            fig, ax = plt.subplots(figsize=(4, 3.2))
+            ax.plot(CV["t"], CV["abp_true"], color=GREEN, lw=1.5, label="true ABP")
             ax.plot(CV["t"], CV["abp_recon"], color=NAVY, lw=1.1, ls="--", label="reconstructed")
             ax.set_xlim(0, 5); ax.set_xlabel("time (s)"); ax.set_ylabel("ABP (norm.)")
             ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
 
-        def row(name, arr): return f"| {name} | " + " | ".join(f"{x:.2f}" for x in arr) + " |"
-        st.markdown(
-            "| metric \\ α | " + " | ".join(f"{x:g}" for x in al) + " |\n"
-            "|" + "---|" * (len(al) + 1) + "\n"
-            + row("accuracy (R²)", sw["acc"]) + "\n"
-            + row("morphology probe (R²)", sw["probe_morph"]) + "\n"
-            + row("**donor-swap (causal)**", sw["swap"]))
-        st.caption(
-            "As reliance on the reconstruction rises, accuracy barely moves and morphology stays "
-            "equally decodable — but the **causal donor-swap climbs from ~0 to "
-            f"{max(sw['swap']):.2f}**. Faithfulness is the one property that tracks how much the "
-            "model actually routes BP through the pressure wave. Exactly the synthetic-tab signature, "
-            "reproduced on real signals — with the reconstruction as the faithfulness lever.")
+        st.markdown("**Decodable ≠ used** — every cue, ranked by how decodable it is:")
+        rows = sorted(cues.items(), key=lambda kv: -kv[1]["probe_mean"])
+        md = "| cue | decodable (probe R²) | causally used (frac ± std) |\n|---|---|---|\n"
+        for name, val in rows:
+            used = f"{val['frac_mean']:.2f} ± {val['frac_std']:.2f}"
+            flag = " ✅" if (val["expect_sign"] != 0 and val["frac_mean"] > 0.5) else ""
+            md += f"| {name} | {val['probe_mean']:.2f} | {used}{flag} |\n"
+        st.markdown(md)
+        st.caption("Shape cues are physiologically real — PPG-derived vs ground-truth ABP-derived: "
+                   + ", ".join(f"{k} r={cval[k]:+.2f}" for k in ["rise", "aix", "apg"] if k in cval)
+                   + ". The audit discriminates *on the same model* — so a null on PAT is a real "
+                     "verdict, not a blind instrument.")
 
-        # mechanism profile at alpha=1 — faithful to WHICH cue?
-        st.markdown("**At α = 1, faithful to _which_ cue?**  (donor-swap per candidate mechanism)")
-        prof = C.get("profile", {}); cval = C.get("cue_validation", {})
-        p2 = st.columns([3, 2])
-        with p2[0]:
-            if prof:
-                names = list(prof.keys()); fracs = [prof[n]["frac_correct"] for n in names]
-                cols = [GREEN if (prof[n]["expect_sign"] != 0 and prof[n]["frac_correct"] > 0.5)
-                        else GREY for n in names]
-                fig, ax = plt.subplots(figsize=(5, 2.8))
-                ax.barh(range(len(names)), fracs, color=cols)
-                ax.axvline(0.5, color="k", ls=":", lw=1)
-                ax.set_yticks(range(len(names)))
-                ax.set_yticklabels([n.replace(" (", "\n(") for n in names], fontsize=7)
-                ax.set_xlabel("frac in expected physiological direction"); ax.set_xlim(0, 1)
-                ax.invert_yaxis(); fig.tight_layout(); st.pyplot(fig)
-        with p2[1]:
-            if prof:
-                st.caption("Decodable ≠ used — cues ranked by decodability:")
-                rows = sorted(prof.items(), key=lambda kv: -kv[1].get("probe_r2", 0.0))
-                md = "| cue | decodable R² | used (frac) |\n|---|---|---|\n"
-                for name, val in rows:
-                    short = name.split(" (")[0]
-                    md += f"| {short} | {val.get('probe_r2', 0.0):.2f} | {val['frac_correct']:.2f} |\n"
-                st.markdown(md)
-            st.caption("Shape cues validate vs ground-truth ABP: "
-                       + ", ".join(f"{k} r={cval[k]:+.2f}" for k in ["rise", "aix", "apg"] if k in cval))
-
-        # data-driven verdict
-        morph_fracs = [prof[n]["frac_correct"] for n in prof
-                       if prof[n]["expect_sign"] != 0 and "morphology" in n]
-        pat_f = prof.get("PAT (arrival time)", {}).get("frac_correct", float("nan"))
-        best_morph = max(morph_fracs) if morph_fracs else float("nan")
-        if np.isfinite(best_morph) and best_morph > 0.5 and pat_f < 0.5:
+        pat = cues.get("PAT (arrival time)", {})
+        morph = [(n, v) for n, v in cues.items() if v["expect_sign"] != 0 and "morphology" in n
+                 and v["frac_mean"] > 0.5]
+        pat_f = pat.get("frac_mean", float("nan"))
+        if morph and np.isfinite(pat_f) and pat_f < 0.5:
+            best = max(morph, key=lambda nv: nv[1]["frac_mean"])
             st.success(
-                f"**Faithful to morphology, not to arrival time.** At α=1 the model fails the PAT "
-                f"audit (frac {pat_f:.2f} < 0.5) but passes a wave-shape / stiffness cue "
-                f"(frac {best_morph:.2f} > 0.5). Routing BP through the rebuilt pressure wave makes the "
-                "model use the mechanism ECG+PPG actually carries — and the audit says faithful *to "
-                "what*, not just yes/no. Reconstruction is a usable lever for building faithful models.")
+                f"**These models are pulse-wave-analysis estimators, not transit-time estimators.** "
+                f"Across {C['n_seeds']} seeds the causal audit finds arrival time (PAT) is *not* used "
+                f"(frac {pat_f:.2f} < 0.5) while a wave-shape / stiffness cue **is** "
+                f"({best[0].split(' (')[0]}, frac {best[1]['frac_mean']:.2f} > 0.5). The mechanism the "
+                "network relies on is the pressure-wave morphology ECG+PPG actually carries — the audit "
+                "tells us faithful *to what*, not merely yes/no.")
         else:
             st.info(
-                f"At α=1 the causal audit reads PAT frac {pat_f:.2f} and best morphology cue "
-                f"{best_morph:.2f}. The α-sweep still shows the donor-swap is the only property that "
-                "tracks reconstruction reliance — faithfulness is causal, and separable from accuracy "
-                "and decodability.")
+                f"Across {C['n_seeds']} seeds: PAT frac {pat_f:.2f}. Decodability and causal use come "
+                "apart cue-by-cue — the causal audit is the only thing that separates them.")

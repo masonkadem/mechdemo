@@ -10,3 +10,4 @@ subset_cache.npz
 # local scratch / dev helpers
 scratch_*.py
 *.png
+data/_cue_cache.npz
