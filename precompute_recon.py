@@ -18,8 +18,8 @@ import json, numpy as np, torch, torch.nn as nn
 import mechlib
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-LAM, EPOCHS = 1.0, 60
-ALPHAS = [0.0, 0.25, 0.5, 0.75, 1.0]
+LAM, EPOCHS, BETA = 1.0, 60, 0.3      # BETA: keep BOTH heads individually competent so alpha
+ALPHAS = [0.0, 0.25, 0.5, 0.75, 1.0]  # controls routing (not competence) -> smooth swap ramp
 ECG, PPG, ABP = mechlib.ECG, mechlib.PPG, mechlib.ABP
 
 d = mechlib.load_mini("data/vitaldb_mini.npz"); fs = int(d["fs"])
@@ -95,8 +95,10 @@ def train(alpha, seed=0, bs=128):
         for s in range(0, len(Xt), bs):
             b = perm[s:s+bs]
             p, r, abp = net.parts(Xt[b])
-            bp = alpha * net.rhead(r) + (1 - alpha) * net.shead(p)
-            loss = (((bp - yt[b]) ** 2) / bp_var).mean() + LAM * ((abp - At[b]) ** 2).mean()
+            rbp, sbp = net.rhead(r), net.shead(p)
+            bp = alpha * rbp + (1 - alpha) * sbp
+            loss = ((((bp - yt[b]) ** 2) / bp_var).mean() + LAM * ((abp - At[b]) ** 2).mean()
+                    + BETA * ((((rbp - yt[b]) ** 2) + ((sbp - yt[b]) ** 2)) / bp_var).mean())
             opt.zero_grad(); loss.backward(); opt.step()
     net.eval(); return net
 
