@@ -1,228 +1,169 @@
-"""Capstone v2: does reconstructing the ABP *waveform* as an intermediate make a
-model FAITHFUL to pulse transit time (PTT)?
+"""Real-data faithfulness dial: sweep how much a model routes BP through the reconstructed
+ABP pressure waveform, and watch the audits — the real-data analogue of the synthetic tab.
 
-Same CNN backbone (ECG + PPG -> BP). The only difference is the auxiliary objective:
+    BP = alpha * head_recon(features_of(ABP_hat))  +  (1-alpha) * head_shortcut(features)
+    loss = MSE(BP)/Var(BP)  +  lambda * MSE(ABP_hat, ABP_true)   # decoder always trained
 
-    vanilla :  loss = MSE(BP)/Var(BP)
-    aux     :  loss = MSE(BP)/Var(BP)  +  lambda * MSE(ABP_hat, ABP_true)   # rebuild the wave
+alpha = 0  -> pure direct shortcut ;  alpha = 1 -> BP flows only through the rebuilt wave.
+As alpha rises we expect (mirroring the synthetic sandbox):
+    accuracy            ~ flat   (both pathways can fit BP)
+    morphology probe    ~ flat   (the wave is decodable regardless, decoder always on)
+    donor-swap          tracks alpha  (only the causal audit sees the faithful routing)
 
-The aux model is forced to rebuild the arterial pressure waveform (morphology) from
-ECG + PPG through a shared feature map. We then measure FOUR different things people
-conflate with faithfulness:
-
-    1. accuracy            -- calibrated BP MAE
-    2. decodability        -- linear-probe R^2 for PTT in the pooled features
-    3. reconstruction      -- per-segment correlation of ABP_hat with true ABP (morphology)
-    4. causal faithfulness -- donor-swap dDBP/dPTT + input-space PTT-shift audit
-
-Faithful physiology = NEGATIVE dBP/dPTT (longer transit time -> lower BP). An analytic
-detect-PTT-then-map model is included as a faithful-by-construction positive control.
-Writes data/capstone.json + data/capstone.npz (consumed by app_faithfulness.py).
+Also computes, at alpha = 1: the mechanism-faithfulness profile across candidate cues
+(PAT / rise-time / augmentation index / APG stiffness / HR / amplitude), and validates the
+PPG-derived shape cues against the ground-truth ABP-derived ones. Writes data/capstone.*.
 """
 import json, numpy as np, torch, torch.nn as nn
 import mechlib
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-LAM = 1.0                     # reconstruction weight
-EPOCHS = 60
+LAM, EPOCHS = 1.0, 60
+ALPHAS = [0.0, 0.25, 0.5, 0.75, 1.0]
 ECG, PPG, ABP = mechlib.ECG, mechlib.PPG, mechlib.ABP
 
-d = mechlib.load_mini("data/vitaldb_mini.npz")
-fs = d["fs"]
+d = mechlib.load_mini("data/vitaldb_mini.npz"); fs = int(d["fs"])
 Xtr = mechlib.normalize(d["Xtr"][:, :, [ECG, PPG]]); ytr = d["ytr"]
-Xte = mechlib.normalize(d["Xte"][:, :, [ECG, PPG]]); yte = d["yte"]; gte = d["gte"]
+Xte = mechlib.normalize(d["Xte"][:, :, [ECG, PPG]]); yte = d["yte"]
+L = Xtr.shape[1]
 
 
 def stdz_wave(w):
-    """Per-segment standardized ABP shape (morphology target; absolute mmHg removed)."""
-    w = w.astype(np.float32).copy()
-    w -= w.mean(1, keepdims=True); w /= w.std(1, keepdims=True) + 1e-8
-    return w
+    w = w.astype(np.float32).copy(); w -= w.mean(1, keepdims=True)
+    w /= w.std(1, keepdims=True) + 1e-8; return w
 
 
-Atr = stdz_wave(d["Xtr"][:, :, ABP])          # true ABP waveform, standardized
-Ate = stdz_wave(d["Xte"][:, :, ABP])
+Atr, Ate = stdz_wave(d["Xtr"][:, :, ABP]), stdz_wave(d["Xte"][:, :, ABP])
+y_mu, y_sd = ytr.mean(0), ytr.std(0) + 1e-6
 
-print("computing measured PTT + candidate cues (test) ...", flush=True)
-ptt_te = mechlib.compute_ptt(d["Xte"][:, :, [ECG, PPG]], fs, ecg_pos=0, ppg_pos=1)
-ptt_tr = mechlib.compute_ptt(d["Xtr"][:, :, [ECG, PPG]], fs, ecg_pos=0, ppg_pos=1)
-scalars_te = mechlib.compute_scalars(d["Xte"][:, :, [ECG, PPG]], fs, ecg_pos=0, ppg_pos=1)
+print("computing cues (PPG) + ground-truth morphology (ABP) ...", flush=True)
+scalars_te = mechlib.compute_scalars(d["Xte"][:, :, [ECG, PPG]], fs, 0, 1)
+morph_abp = mechlib.compute_morphology(d["Xte"], fs, ABP)          # ground-truth shape cues
+ptt_tr = mechlib.compute_ptt(d["Xtr"][:, :, [ECG, PPG]], fs, 0, 1)
 
 
-class ReconCNN(nn.Module):
-    """Shared conv encoder -> pooled features -> BP head (audit-compatible).
-    A decoder branch rebuilds the ABP waveform from the same temporal feature map."""
+class AlphaReconCNN(nn.Module):
+    """Encoder -> {pooled features, reconstructed ABP}. BP is a convex blend of a shortcut
+    head (on pooled features) and a recon head (on features of the rebuilt ABP wave)."""
     def __init__(self, w=32):
         super().__init__()
         self.enc = nn.Sequential(
-            nn.Conv1d(2, w, 7, 2, 3), nn.ReLU(),
-            nn.Conv1d(w, w*2, 7, 2, 3), nn.ReLU(),
+            nn.Conv1d(2, w, 7, 2, 3), nn.ReLU(), nn.Conv1d(w, w*2, 7, 2, 3), nn.ReLU(),
             nn.Conv1d(w*2, w*2, 7, 2, 3), nn.ReLU())
         self.pool = nn.AdaptiveAvgPool1d(1)
-        self.head = nn.Linear(w*2, 2)                       # BP (mmHg)
-        self.dec = nn.Sequential(                            # ABP waveform reconstruction
+        self.dec = nn.Sequential(
             nn.ConvTranspose1d(w*2, w*2, 7, 2, 3, output_padding=1), nn.ReLU(),
             nn.ConvTranspose1d(w*2, w, 7, 2, 3, output_padding=1), nn.ReLU(),
             nn.ConvTranspose1d(w, 1, 7, 2, 3, output_padding=1))
+        self.renc = nn.Sequential(
+            nn.Conv1d(1, w, 7, 2, 3), nn.ReLU(), nn.Conv1d(w, w, 7, 2, 3), nn.ReLU())
+        self.shead = nn.Linear(w*2, 2)          # direct shortcut pathway
+        self.rhead = nn.Linear(w, 2)            # routed-through-reconstruction pathway
 
-    def encode(self, x): return self.enc(x.transpose(1, 2))   # (B, C, T')
-    def features(self, x): return self.pool(self.encode(x)).flatten(1)
-    def forward(self, x): return self.head(self.features(x))
-    def reconstruct(self, x, L):
-        y = self.dec(self.encode(x))
-        return nn.functional.interpolate(y, size=L, mode="linear", align_corners=False).squeeze(1)
-    def forward_aux(self, x, L):
-        z = self.encode(x)
-        return self.head(self.pool(z).flatten(1)), \
-            nn.functional.interpolate(self.dec(z), size=L, mode="linear", align_corners=False).squeeze(1)
+    def parts(self, x):
+        z = self.enc(x.transpose(1, 2))
+        p = self.pool(z).flatten(1)
+        abp = nn.functional.interpolate(self.dec(z), size=L, mode="linear",
+                                        align_corners=False).squeeze(1)
+        r = self.pool(self.renc(abp.unsqueeze(1))).flatten(1)
+        return p, r, abp
+
+    def forward(self, x, alpha):
+        p, r, _ = self.parts(x)
+        return alpha * self.rhead(r) + (1 - alpha) * self.shead(p)
 
 
-def train(lam, seed=0, epochs=EPOCHS, bs=128):
+def train(alpha, seed=0, bs=128):
     torch.manual_seed(seed); np.random.seed(seed)
-    net = ReconCNN().to(device); opt = torch.optim.Adam(net.parameters(), 2e-3)
+    net = AlphaReconCNN().to(device); opt = torch.optim.Adam(net.parameters(), 2e-3)
     Xt = torch.tensor(Xtr, device=device); yt = torch.tensor(ytr, device=device)
     At = torch.tensor(Atr, device=device)
     bp_var = torch.tensor(ytr.var(0), dtype=torch.float32, device=device)
-    L = Xtr.shape[1]
-    for ep in range(epochs):
+    for ep in range(EPOCHS):
         net.train(); perm = torch.randperm(len(Xt))
         for s in range(0, len(Xt), bs):
             b = perm[s:s+bs]
-            bp_hat, abp_hat = net.forward_aux(Xt[b], L)
-            loss = (((bp_hat - yt[b])**2) / bp_var).mean()
-            if lam > 0:
-                loss = loss + lam * ((abp_hat - At[b])**2).mean()
+            p, r, abp = net.parts(Xt[b])
+            bp = alpha * net.rhead(r) + (1 - alpha) * net.shead(p)
+            loss = (((bp - yt[b]) ** 2) / bp_var).mean() + LAM * ((abp - At[b]) ** 2).mean()
             opt.zero_grad(); loss.backward(); opt.step()
     net.eval(); return net
 
 
-def recon_corr(net):
-    """Mean per-segment correlation of reconstructed vs true ABP morphology (test)."""
-    L = Xte.shape[1]; corrs = []
-    with torch.no_grad():
-        for s in range(0, len(Xte), 512):
-            xb = torch.tensor(Xte[s:s+512], device=device)
-            pr = net.reconstruct(xb, L).cpu().numpy()
-            tr = Ate[s:s+512]
-            for i in range(len(pr)):
-                c = np.corrcoef(pr[i], tr[i])[0, 1]
-                if np.isfinite(c): corrs.append(c)
-    return float(np.mean(corrs))
+@torch.no_grad()
+def collect(net):
+    """Per-test pooled feats p, recon-pathway BP rp, shortcut BP sp, recon-feats r, recon corr."""
+    P, R, RP, SP, corrs = [], [], [], [], []
+    for s in range(0, len(Xte), 512):
+        x = torch.tensor(Xte[s:s+512], device=device)
+        p, r, abp = net.parts(x)
+        P.append(p.cpu().numpy()); R.append(r.cpu().numpy())
+        RP.append(net.rhead(r).cpu().numpy()); SP.append(net.shead(p).cpu().numpy())
+        ah = abp.cpu().numpy(); at = Ate[s:s+512]
+        corrs += [np.corrcoef(ah[i], at[i])[0, 1] for i in range(len(ah))]
+    return (np.concatenate(P), np.concatenate(R), np.concatenate(RP), np.concatenate(SP),
+            float(np.nanmean(corrs)))
 
 
-def features_of(net):
-    return np.concatenate([net.features(torch.tensor(Xte[s:s+512], device=device)).detach().cpu().numpy()
-                           for s in range(0, len(Xte), 512)])
+def r2(pred, true):
+    return float(1 - ((true - pred) ** 2).sum() / (((true - true.mean(0)) ** 2).sum() + 1e-9))
 
 
-def per_segment_recon_vs_causal(net, n=600, deltas=(-6, -4, -2, 0, 2, 4, 6), seed=1):
-    """For a sample of test segments: reconstruction quality (corr with true ABP) and the
-    per-segment causal DBP response to an imposed PTT shift. Used for the morphology-vs-
-    faithfulness scatter (are the best-reconstructed segments the PTT-responsive ones?)."""
-    L = Xte.shape[1]; rng = np.random.default_rng(seed)
-    sel = rng.choice(len(Xte), min(n, len(Xte)), replace=False); sel.sort()
-    Xs = Xte[sel]; dt = np.array(deltas) / fs
-    with torch.no_grad():
-        pr = net.reconstruct(torch.tensor(Xs, device=device), L).cpu().numpy()
-    corr = np.array([np.corrcoef(pr[i], Ate[sel][i])[0, 1] for i in range(len(sel))])
-    preds = np.zeros((len(Xs), len(deltas)), np.float32)
-    for j, dd in enumerate(deltas):
-        Xd = Xs.copy(); Xd[:, :, 1] = np.roll(Xs[:, :, 1], int(dd), axis=1)
-        preds[:, j] = mechlib.predict(net, Xd, device)[:, 1]
-    slope = np.array([np.polyfit(dt, preds[i], 1)[0] for i in range(len(Xs))])
-    m = np.isfinite(corr) & np.isfinite(slope)
-    return corr[m], slope[m]
+def sweep_metrics(alpha, P, RP, SP, morph_probe_target, n_pairs=1500, seed=0):
+    ys = (yte - y_mu) / y_sd
+    bp = alpha * RP + (1 - alpha) * SP
+    acc = r2((bp - y_mu) / y_sd, ys)                               # standardized, both targets
+    mae_dbp = float(np.abs(bp[:, 1] - yte[:, 1]).mean())
+    probe = mechlib.linear_probe(P, morph_probe_target)           # morphology decodable from feats
+    rng = np.random.default_rng(seed)
+    base = rng.integers(0, len(P), n_pairs); donor = rng.integers(0, len(P), n_pairs)
+    bp_sw = alpha * RP[donor, 1] + (1 - alpha) * SP[base, 1]       # swap recon pathway to donor
+    swap = r2(bp_sw, yte[donor, 1])                                # follows donor's true DBP?
+    return {"acc": acc, "mae_dbp": mae_dbp, "probe_morph": probe, "swap": max(swap, 0.0)}
 
 
-def evaluate(net, tag):
-    pred = mechlib.predict(net, Xte, device)
-    cal = mechlib.calibrated_mae(pred, yte, gte, K=3)
-    feats = features_of(net)
-    probe = mechlib.linear_probe(feats, ptt_te * 1000)
-    rc = recon_corr(net)
-    au = mechlib.causal_ptt_audit(net, Xte, fs, device, ppg_pos=1)
-    head = lambda F: net.head(torch.tensor(F, dtype=torch.float32, device=device)).detach().cpu().numpy()
-    ds = mechlib.donor_swap(feats, head, ptt_te, target=1)
-    prof = mechlib.mechanism_profile(feats, head, scalars_te, target=1)
-    prof_str = "  ".join(f"{k.split()[0]} {v['frac_correct']:.2f}" for k, v in prof.items())
-    print(f"{tag:>10}  MAE(cal) DBP {cal[1]:.1f}  probe PTT R2 {probe:.2f}  recon corr {rc:.2f}  "
-          f"[donor-swap PTT frac {ds['donor_swap_frac_correct']:.2f}]  profile[{prof_str}]", flush=True)
-    return {"mae_cal_sbp": float(cal[0]), "mae_cal_dbp": float(cal[1]),
-            "probe_ptt_r2": probe, "recon_corr": rc,
-            "shift_ms": au["shift_ms"],
-            "curve_dbp": au["dbp"]["curve"], "curve_sbp": au["sbp"]["curve"],
-            "in_dbp_slope": au["dbp"]["dBP_dPTT"], "in_dbp_frac": au["dbp"]["frac_correct_sign"],
-            "ds_dbp_slope": ds["donor_swap_slope"], "ds_dbp_frac": ds["donor_swap_frac_correct"],
-            "profile": prof}
+print(f"training alpha sweep {ALPHAS} (lambda={LAM}) ...", flush=True)
+morph_target = morph_abp["rise"]                                   # ground-truth morphology scalar
+sweep = {"acc": [], "mae_dbp": [], "probe_morph": [], "swap": []}
+overlay = None; prof = None; recon1 = None
+for al in ALPHAS:
+    net = train(al); P, R, RP, SP, rc = collect(net)
+    m = sweep_metrics(al, P, RP, SP, morph_target)
+    for k in sweep:
+        sweep[k].append(m[k])
+    print(f"  alpha {al:.2f}   acc R2 {m['acc']:.2f}   morph-probe R2 {m['probe_morph']:.2f}   "
+          f"donor-swap R2 {m['swap']:.2f}   MAE_DBP {m['mae_dbp']:.1f}   recon {rc:.2f}", flush=True)
+    if al == 1.0:
+        recon1 = rc
+        head = lambda F: net.rhead(torch.tensor(F, dtype=torch.float32, device=device)).detach().cpu().numpy()
+        prof = mechlib.mechanism_profile(R, head, scalars_te, target=1)
+        with torch.no_grad():
+            abp1 = net.parts(torch.tensor(Xte[:1], device=device))[2].cpu().numpy()[0]
+        overlay = (Ate[0], abp1)
 
+# validate PPG-derived shape cues against ground-truth ABP-derived ones
+cue_val = {}
+for cue in ["rise", "aix", "apg"]:
+    p, a = scalars_te[cue], morph_abp[cue]; mm = np.isfinite(p) & np.isfinite(a)
+    cue_val[cue] = float(np.corrcoef(p[mm], a[mm])[0, 1]) if mm.sum() > 10 else float("nan")
+print("cue validation (PPG vs ground-truth ABP):", {k: round(v, 2) for k, v in cue_val.items()}, flush=True)
 
-def readoff_model(seed=0, epochs=EPOCHS, bs=128):
-    """Faithful-by-design: reconstruct the ABP waveform in mmHg, then read SBP/DBP off its
-    peak/trough. The pressure wave is an interpretable, auditable bottleneck."""
-    torch.manual_seed(seed); np.random.seed(seed)
-    net = ReconCNN().to(device); opt = torch.optim.Adam(net.parameters(), 2e-3)
-    Xt = torch.tensor(Xtr, device=device)
-    Mt = torch.tensor(d["Xtr"][:, :, ABP].astype(np.float32), device=device)   # mmHg ABP
-    L = Xtr.shape[1]
-    for ep in range(epochs):
-        net.train(); perm = torch.randperm(len(Xt))
-        for s in range(0, len(Xt), bs):
-            b = perm[s:s+bs]
-            loss = ((net.reconstruct(Xt[b], L) - Mt[b]) ** 2).mean()
-            opt.zero_grad(); loss.backward(); opt.step()
-    net.eval()
-    with torch.no_grad():
-        rec = np.concatenate([net.reconstruct(torch.tensor(Xte[s:s+512], device=device), L).cpu().numpy()
-                              for s in range(0, len(Xte), 512)])
-    sbp_hat, dbp_hat = rec.max(1), rec.min(1)
-    mae = [float(np.abs(sbp_hat - yte[:, 0]).mean()), float(np.abs(dbp_hat - yte[:, 1]).mean())]
-    print(f"   readoff  reconstruct-then-read-off MAE  SBP {mae[0]:.1f}  DBP {mae[1]:.1f} mmHg", flush=True)
-    return {"mae_sbp": mae[0], "mae_dbp": mae[1]}, rec[0], d["Xte"][0, :, ABP].astype(np.float32)
+# analytic PAT->DBP control (is the arrival-time law even the right sign here?)
+mtr = np.isfinite(ptt_tr); coef = np.polyfit(ptt_tr[mtr], ytr[mtr, 1], 1)
+dbp_mean, sbp_mean = ytr[:, 1].mean(), ytr[:, 0].mean()
+def analytic_fn(Xr):
+    p = mechlib.compute_ptt(Xr, fs, 0, 1)
+    return np.stack([np.full(len(Xr), sbp_mean),
+                     np.where(np.isfinite(p), coef[0] * p + coef[1], dbp_mean)], 1).astype(np.float32)
+au = mechlib.causal_ptt_audit(None, d["Xte"][:, :, [ECG, PPG]], fs, device, ppg_pos=1, predict_fn=analytic_fn)
+analytic = {"in_dbp_slope": au["dbp"]["dBP_dPTT"], "fit_slope_mmHg_per_ms": float(coef[0] * 1e-3)}
+print(f"analytic PAT->DBP fit slope {coef[0]*1e-3:+.3f} mmHg/ms  audit slope {au['dbp']['dBP_dPTT']:+.2f}", flush=True)
 
-
-def analytic_positive_control():
-    """Faithful BY CONSTRUCTION: detect PTT, map DBP = m*PTT + c (m fit on train, < 0).
-    If the audit is a valid instrument it should read this as faithful (negative slope)."""
-    m = np.isfinite(ptt_tr)
-    coef = np.polyfit(ptt_tr[m], ytr[m, 1], 1)
-    dbp_mean, sbp_mean = ytr[:, 1].mean(), ytr[:, 0].mean()
-    def predict_fn(Xr):
-        p = mechlib.compute_ptt(Xr, fs, ecg_pos=0, ppg_pos=1)
-        dbp = np.where(np.isfinite(p), coef[0] * p + coef[1], dbp_mean)
-        return np.stack([np.full(len(Xr), sbp_mean), dbp], 1).astype(np.float32)
-    au = mechlib.causal_ptt_audit(None, Xte, fs, device, ppg_pos=1, predict_fn=predict_fn)
-    print(f"  analytic  input-shift dDBP/dPTT {au['dbp']['dBP_dPTT']:+.2f} "
-          f"frac {au['dbp']['frac_correct_sign']:.2f}  (PTT->DBP {coef[0]*1e-3:+.3f} mmHg/ms)", flush=True)
-    return {"in_dbp_slope": au["dbp"]["dBP_dPTT"], "in_dbp_frac": au["dbp"]["frac_correct_sign"],
-            "curve_dbp": au["dbp"]["curve"], "shift_ms": au["shift_ms"]}
-
-
-def example_reconstructions(net, k=1):
-    """A few (true, reconstructed) ABP segments for the app's morphology overlay."""
-    L = Xte.shape[1]
-    with torch.no_grad():
-        pr = net.reconstruct(torch.tensor(Xte[:k], device=device), L).cpu().numpy()
-    return Ate[:k], pr
-
-
-print(f"training vanilla (lam=0) and aux (ABP-recon, lam={LAM}) ...", flush=True)
-van = train(0.0); aux = train(LAM)
-readoff, rec_mmHg, abp_mmHg = readoff_model()
-res = {"lambda": LAM, "primary_target": "DBP", "aux_kind": "abp_waveform",
-       "vanilla": evaluate(van, "vanilla"),
-       "aux": evaluate(aux, "aux (ABP)"),
-       "analytic": analytic_positive_control(),
-       "readoff": readoff}
+res = {"lambda": LAM, "alphas": ALPHAS, "sweep": sweep, "recon_corr": recon1,
+       "profile": prof, "cue_validation": cue_val, "analytic": analytic}
 json.dump(res, open("data/capstone.json", "w"), indent=2)
-
-t_true, t_rec = example_reconstructions(aux, k=1)
-seg_corr, seg_slope = per_segment_recon_vs_causal(aux)
 np.savez_compressed("data/capstone.npz",
-    shift_ms=np.array(res["vanilla"]["shift_ms"]),
-    van_dbp=np.array(res["vanilla"]["curve_dbp"]), aux_dbp=np.array(res["aux"]["curve_dbp"]),
-    van_sbp=np.array(res["vanilla"]["curve_sbp"]), aux_sbp=np.array(res["aux"]["curve_sbp"]),
-    analytic_dbp=np.array(res["analytic"]["curve_dbp"]),
-    t=np.arange(Xte.shape[1]) / fs, abp_true=t_true[0], abp_recon=t_rec[0],
-    seg_recon_corr=seg_corr, seg_causal_slope=seg_slope,
-    readoff_t=np.arange(Xte.shape[1]) / fs, readoff_abp_true=abp_mmHg, readoff_abp_rec=rec_mmHg)
+    alphas=np.array(ALPHAS), acc=np.array(sweep["acc"]),
+    probe_morph=np.array(sweep["probe_morph"]), swap=np.array(sweep["swap"]),
+    t=np.arange(L) / fs, abp_true=overlay[0], abp_recon=overlay[1])
 print("wrote data/capstone.json + .npz", flush=True); print("DONE", flush=True)
