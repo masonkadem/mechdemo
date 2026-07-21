@@ -112,7 +112,7 @@ def ptt_scatter():
 st.set_page_config(page_title="BP waveform faithfulness", layout="wide")
 st.title("Accuracy vs faithfulness in blood-pressure estimation from waveforms")
 tab_syn, tab_real, tab_cap = st.tabs(
-    ["Synthetic sandbox", "Real waveforms (VitalDB)", "PTT reconstruction"])
+    ["Synthetic sandbox", "Real waveforms (VitalDB)", "Faithful to what?"])
 
 # ── SYNTHETIC ─────────────────────────────────────────────────────────────────
 with tab_syn:
@@ -184,27 +184,19 @@ with tab_real:
     if R is None:
         st.warning("Precomputed real-data files not found. Run the precompute step.")
     else:
-        st.markdown("**Accuracy**")
-        mc = st.columns(3)
-        mc[0].metric("Baseline (predict mean)", f"{R['baseline_mae_sbp']:.1f} mmHg")
-        mc[1].metric("Raw model", f"{R['test_mae_sbp']:.1f} mmHg")
-        mc[2].metric("+ per-subject calibration", f"{R['cal_mae_sbp']:.1f} mmHg",
-                     f"{R['cal_mae_sbp'] - R['test_mae_sbp']:+.1f}", delta_color="inverse")
-
-        st.markdown("**Faithfulness — does the model causally use PTT?**")
-        mf = st.columns(3)
-        mf[0].metric("PTT decodable (probe R²)", f"{R['probe_ptt_r2']:.2f}",
-                     f"shuffled {R['probe_ptt_shuffled_r2']:+.2f}")
-        sign_ok = R["dBP_dPTT_sbp"] < 0
-        mf[1].metric("Causal: dSBP/dPTT", f"{R['dBP_dPTT_sbp']:+.1f} mmHg/s",
-                     "correct direction" if sign_ok else "wrong direction",
-                     delta_color="normal" if sign_ok else "inverse")
-        mf[2].metric("Frac physiological direction", f"{R['frac_correct_sign']:.2f}",
-                     help="0.5 = chance; >0.5 = faithful")
+        m = st.columns(5)
+        m[0].metric("Baseline MAE", f"{R['baseline_mae_sbp']:.1f}", help="predict-the-mean")
+        m[1].metric("Raw model MAE", f"{R['test_mae_sbp']:.1f}")
+        m[2].metric("+ calibration MAE", f"{R['cal_mae_sbp']:.1f}",
+                    f"{R['cal_mae_sbp'] - R['test_mae_sbp']:+.1f}", delta_color="inverse")
+        m[3].metric("PTT decodable (probe R²)", f"{R['probe_ptt_r2']:.2f}",
+                    f"shuffled {R['probe_ptt_shuffled_r2']:+.2f}")
+        m[4].metric("Causal PTT use (frac)", f"{R['frac_correct_sign']:.2f}",
+                    help="share of segments where longer PTT → lower BP; 0.5 = chance")
 
         g = st.columns(3)
         with g[0]:
-            st.caption("ECG + PPG: one segment")
+            st.caption("ECG + PPG — one segment")
             fig, axes = plt.subplots(2, 1, figsize=(3.4, 2.6), sharex=True)
             axes[0].plot(A["t"], A["wave_ecg"], color=RED, lw=.8); axes[0].set_ylabel("ECG")
             axes[0].set_title(
@@ -213,88 +205,149 @@ with tab_real:
             axes[1].set_xlabel("time (s)"); axes[1].set_xlim(0, 5)
             fig.tight_layout(); st.pyplot(fig)
         with g[1]:
-            st.caption("Causal audit: BP response to PTT shift")
+            st.caption("Causal audit — BP vs imposed PTT shift (faithful = down)")
             fig, ax = plt.subplots(figsize=(3.4, 2.6))
             ax.plot(A["curve_shift_ms"], A["curve_sbp"], "-o", ms=3, color=NAVY, label="SBP")
             ax.plot(A["curve_shift_ms"], A["curve_dbp"], "-o", ms=3, color=RED, label="DBP")
-            ax.axhline(0, color="#ccc", lw=.5)
             ax.set_xlabel("imposed PTT shift (ms)"); ax.set_ylabel("predicted BP (mmHg)")
             ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
         with g[2]:
-            st.caption(f"Measured PTT distribution (median {R['ptt_median_ms']:.0f} ms)")
-            fig, ax = plt.subplots(figsize=(3.4, 2.6))
-            ax.hist(A["ptt_ms"], bins=30, color=GREEN, edgecolor="white", linewidth=.3)
-            ax.axvline(R["ptt_median_ms"], color="k", ls="--", lw=1)
-            ax.set_xlabel("PTT (ms)"); ax.set_ylabel("count")
-            fig.tight_layout(); st.pyplot(fig)
-
-        st.markdown("**Why PTT from ECG+PPG carries limited BP information in resting ICU patients**")
-        try:
-            ptt_ms, sbp, dbp = ptt_scatter()
-            fig, axes = plt.subplots(1, 2, figsize=(7, 2.8))
-            for ax, y, lab, col in zip(axes, [sbp, dbp], ["SBP", "DBP"], [NAVY, RED]):
-                r = float(np.corrcoef(ptt_ms, y)[0, 1])
-                ax.scatter(ptt_ms, y, s=3, alpha=.2, color=col, edgecolor="none")
+            st.caption("PTT vs BP — the transit law is weak here")
+            try:
+                ptt_ms, sbp, dbp = ptt_scatter()
+                rr = float(np.corrcoef(ptt_ms, dbp)[0, 1])
+                fig, ax = plt.subplots(figsize=(3.4, 2.6))
+                ax.scatter(ptt_ms, dbp, s=3, alpha=.2, color=RED, edgecolor="none")
                 xs = np.array([ptt_ms.min(), ptt_ms.max()])
-                ax.plot(xs, np.polyfit(ptt_ms, y, 1) @ np.vstack([xs, np.ones(2)]),
+                ax.plot(xs, np.polyfit(ptt_ms, dbp, 1) @ np.vstack([xs, np.ones(2)]),
                         color="k", lw=1)
-                ax.set_xlabel("measured PTT (ms)"); ax.set_ylabel(f"{lab} (mmHg)")
-                ax.set_title(f"r = {r:+.3f}", fontsize=9)
-            fig.tight_layout(); st.pyplot(fig)
-        except Exception as e:
-            st.caption(f"Scatter unavailable: {e}")
+                ax.set_xlabel("measured PTT (ms)"); ax.set_ylabel("DBP (mmHg)")
+                ax.set_title(f"r = {rr:+.3f}", fontsize=9)
+                fig.tight_layout(); st.pyplot(fig)
+            except Exception as e:
+                st.caption(f"unavailable: {e}")
 
         st.caption(
-            "PTT is measured from ECG R-peak to PPG systolic foot. In resting ICU patients "
-            "the interval is dominated by the pre-ejection period and fingertip transit — both "
-            "driven by cardiac state rather than arterial stiffness alone. The correlation with "
-            "beat-level BP is weak (|r| < 0.2) and the slope can have the wrong sign due to "
-            "cross-subject confounding. A model can reach clinical accuracy via waveform "
-            "morphology and per-subject calibration while remaining unfaithful to the PTT pathway."
+            f"Calibration reaches {R['cal_mae_sbp']:.1f} mmHg SBP MAE — genuinely accurate — and "
+            f"PTT is weakly decodable (R² {R['probe_ptt_r2']:.2f}). Yet the causal audit shows the "
+            f"model does not use it: only {R['frac_correct_sign']*100:.0f}% of segments respond in "
+            "the physiological direction. The interval detected from ECG→PPG is really pulse "
+            "*arrival* time (PAT = pre-ejection period + transit); PEP moves independently of BP, "
+            "so in resting ICU data the PTT→BP law is weak and can invert (right panel). "
+            "Accurate ≠ faithful — and the mechanism may simply not be in this modality."
         )
 
-# ── PTT RECONSTRUCTION ────────────────────────────────────────────────────────
+# ── FAITHFUL TO WHAT? ─────────────────────────────────────────────────────────
 with tab_cap:
     C, CV = load_capstone()
-    if C is None:
-        st.warning("Capstone results not found. Run precompute_capstone.py first.")
+    if C is None or "recon_corr" not in C.get("vanilla", {}):
+        st.warning("Reconstruction results not found (or stale). Run `python precompute_recon.py`.")
     else:
         v, a = C["vanilla"], C["aux"]
         st.markdown(
-            f"Both models share the same CNN backbone (ECG + PPG → BP). "
-            f"The **aux** model adds a PTT reconstruction head (λ = {C['lambda']}): "
-            f"the shared features must also predict the measured transit time. "
-            f"We then run the donor-swap audit — the same interchange intervention as the synthetic tab.")
+            f"Same CNN backbone (ECG + PPG → BP). The **aux** model adds one objective — "
+            f"reconstruct the **ABP pressure waveform** from the shared features (λ = {C['lambda']:g}). "
+            "We then measure four things people conflate with faithfulness.")
 
-        c1, c2 = st.columns(2)
-        for col, tag, r in [(c1, "Vanilla", v), (c2, f"Aux  (+ PTT reconstruction)", a)]:
-            with col:
-                st.markdown(f"**{tag}**")
-                dv = None if r is v else f"{a['probe_ptt_r2'] - v['probe_ptt_r2']:+.2f} vs vanilla"
-                st.metric("PTT reconstruction R²", f"{r['probe_ptt_r2']:.2f}", dv)
-                ds_ok = r["ds_dbp_slope"] < 0
-                st.metric("Donor-swap: dDBP/dPTT", f"{r['ds_dbp_slope']:+.2f} mmHg/s",
-                          "faithful" if ds_ok else "not causally used",
-                          delta_color="normal" if ds_ok else "inverse")
-                st.metric("Donor-swap frac correct", f"{r['ds_dbp_frac']:.2f}",
-                          help="0.5 = chance")
-                st.metric("Calibrated MAE (DBP)", f"{r['mae_cal_dbp']:.1f} mmHg")
+        def cell(x): return f"{x:.2f}"
+        st.markdown(
+            "| model | DBP MAE (cal) ↓ | PTT decodable (probe R²) | ABP morphology (recon corr) | "
+            "causal PTT use (donor-swap frac) |\n"
+            "|---|---|---|---|---|\n"
+            f"| vanilla | {v['mae_cal_dbp']:.1f} | {cell(v['probe_ptt_r2'])} | — | {cell(v['ds_dbp_frac'])} |\n"
+            f"| **+ ABP reconstruction** | {a['mae_cal_dbp']:.1f} | **{cell(a['probe_ptt_r2'])}** "
+            f"| **{cell(a['recon_corr'])}** | {cell(a['ds_dbp_frac'])} |")
+        st.caption(
+            f"Reconstruction makes PTT **{a['probe_ptt_r2']/max(v['probe_ptt_r2'],1e-6):.1f}× more "
+            f"decodable** ({v['probe_ptt_r2']:.2f} → {a['probe_ptt_r2']:.2f}) and rebuilds the pressure "
+            f"wave at corr {a['recon_corr']:.2f} — yet causal PTT use stays at chance "
+            f"({v['ds_dbp_frac']:.2f} → {a['ds_dbp_frac']:.2f}). Accuracy, decodability, and "
+            "reconstruction fidelity are each **independent** of mechanistic faithfulness.")
 
-        cc = st.columns([2, 1])
-        with cc[0]:
-            st.caption("DBP response to an imposed PTT shift (faithful = negative slope)")
-            fig, ax = plt.subplots(figsize=(5, 3))
-            ax.plot(CV["shift_ms"], CV["van_dbp"], "-o", ms=4, color=GREY, label="vanilla")
-            ax.plot(CV["shift_ms"], CV["aux_dbp"], "-o", ms=4, color=NAVY, label="aux")
-            ax.plot(CV["shift_ms"], CV["analytic_dbp"], "--", ms=3, color=GREEN, lw=1.5,
-                    label="analytic (PTT → DBP directly)")
+        g1 = st.columns(2)
+        with g1[0]:
+            st.caption(f"ABP reconstruction (aux) — morphology corr {a['recon_corr']:.2f}")
+            fig, ax = plt.subplots(figsize=(4.6, 2.6))
+            ax.plot(CV["t"], CV["abp_true"], color=GREEN, lw=1.4, label="true ABP")
+            ax.plot(CV["t"], CV["abp_recon"], color=NAVY, lw=1.1, ls="--", label="reconstructed")
+            ax.set_xlim(0, 5); ax.set_xlabel("time (s)"); ax.set_ylabel("ABP (norm.)")
+            ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
+        with g1[1]:
+            st.caption("Mechanism profile — faithful to WHICH cue? (aux model)")
+            prof = a.get("profile", {})
+            if prof:
+                names = list(prof.keys()); fracs = [prof[n]["frac_correct"] for n in names]
+                cols = [GREEN if (prof[n]["expect_sign"] != 0 and prof[n]["frac_correct"] > 0.5)
+                        else GREY for n in names]
+                fig, ax = plt.subplots(figsize=(4.6, 2.6))
+                ax.barh(range(len(names)), fracs, color=cols)
+                ax.axvline(0.5, color="k", ls=":", lw=1)
+                ax.set_yticks(range(len(names)))
+                ax.set_yticklabels([n.replace(" (", "\n(") for n in names], fontsize=7)
+                ax.set_xlabel("frac in expected direction"); ax.set_xlim(0, 1)
+                ax.invert_yaxis(); fig.tight_layout(); st.pyplot(fig)
+            else:
+                st.caption("profile not in data")
+
+        g2 = st.columns(2)
+        with g2[0]:
+            st.caption("Morphology ⊥ faithfulness — per test segment (aux)")
+            if "seg_recon_corr" in CV:
+                sc, sl = CV["seg_recon_corr"], CV["seg_causal_slope"]
+                rr = float(np.corrcoef(sc, sl)[0, 1])
+                fig, ax = plt.subplots(figsize=(4.6, 2.6))
+                ax.scatter(sc, sl, s=5, alpha=.3, color=NAVY, edgecolor="none")
+                ax.axhline(0, color="#ccc", lw=.6)
+                ax.set_xlabel("reconstruction quality (corr)")
+                ax.set_ylabel("causal PTT response")
+                ax.set_title(f"r = {rr:+.2f}  (no link)", fontsize=9)
+                fig.tight_layout(); st.pyplot(fig)
+            else:
+                st.caption("per-segment data not in file")
+        with g2[1]:
+            st.caption("DBP vs imposed PTT shift (faithful = negative slope)")
+            fig, ax = plt.subplots(figsize=(4.6, 2.6))
+            ax.plot(CV["shift_ms"], CV["van_dbp"], "-o", ms=3, color=GREY, label="vanilla")
+            ax.plot(CV["shift_ms"], CV["aux_dbp"], "-o", ms=3, color=NAVY, label="aux (ABP)")
+            ax.plot(CV["shift_ms"], CV["analytic_dbp"], "--", color=GREEN, lw=1.4,
+                    label="analytic (faithful by constr.)")
             ax.set_xlabel("imposed PTT shift (ms)"); ax.set_ylabel("predicted DBP (mmHg)")
-            ax.legend(fontsize=8, frameon=False); fig.tight_layout(); st.pyplot(fig)
-        with cc[1]:
-            st.markdown(
-                "The **analytic** curve is a model that detects PTT from the waveforms and maps "
-                "it linearly to DBP — faithful by construction. It still shows a flat or positive "
-                "response, because PTT and BP are weakly (and confoundedly) coupled in this "
-                "resting cohort. PTT reconstruction raises decodability but cannot manufacture "
-                "a causal signal that is absent in the data."
-            )
+            ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
+
+        st.markdown("**The constructive turn — a faithful-by-design model**")
+        ro = C.get("readoff")
+        rc = st.columns([1, 2])
+        with rc[0]:
+            if ro:
+                st.metric("read-off SBP MAE", f"{ro['mae_sbp']:.1f} mmHg", help="raw, uncalibrated")
+                st.metric("read-off DBP MAE", f"{ro['mae_dbp']:.1f} mmHg", help="raw, uncalibrated")
+        with rc[1]:
+            if "readoff_abp_rec" in CV:
+                st.caption("predict the ABP wave in mmHg, then read SBP/DBP off peak & trough — "
+                           "the mechanism is transparent and auditable by construction")
+                fig, ax = plt.subplots(figsize=(6, 2.4))
+                ax.plot(CV["readoff_t"], CV["readoff_abp_true"], color=GREEN, lw=1.4, label="true ABP")
+                ax.plot(CV["readoff_t"], CV["readoff_abp_rec"], color=NAVY, lw=1.1, ls="--",
+                        label="reconstructed")
+                ax.set_xlim(0, 5); ax.set_xlabel("time (s)"); ax.set_ylabel("mmHg")
+                ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
+
+        prof = a.get("profile", {})
+        morph = prof.get("PPG rise-time (morphology)", {}).get("frac_correct", float("nan"))
+        pat_f = a["ds_dbp_frac"]
+        if np.isfinite(morph) and morph > 0.5 and pat_f < 0.5:
+            st.success(
+                f"**Faithful to morphology, not to PAT.** The reconstruction model fails the "
+                f"arrival-time audit (frac {pat_f:.2f}) but passes the wave-shape / stiffness cue "
+                f"(frac {morph:.2f} > 0.5). The audit doesn't just say faithful/unfaithful — it says "
+                "faithful to *what*. Forcing the model to rebuild the pressure wave routes it through "
+                "the mechanism ECG+PPG actually carries (morphology / arterial stiffness), not the "
+                "one it doesn't (transit time). That reframes a 'failed PTT audit' as a correct "
+                "mechanistic verdict — and points to reconstruction as the way to build faithful models.")
+        else:
+            st.info(
+                f"**Reconstruction ≠ causal use.** Even at recon corr {a['recon_corr']:.2f}, the model "
+                f"does not causally route DBP through PTT (frac {pat_f:.2f}); the analytic control — "
+                "faithful to PAT by construction — also fails (green curve), because the arrival-time "
+                "law is sign-inverted in this resting cohort. Faithfulness needs the mechanism present "
+                "in the data AND causally used; reconstruction alone gives neither for free.")

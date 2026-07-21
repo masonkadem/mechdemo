@@ -26,18 +26,26 @@ Three tabs:
    baseline; **per-subject calibration** makes it genuinely accurate (MAE ~11 mmHg SBP). Yet the
    causal PTT-shift audit shows it does **not** use transit time. Shown for the `cal_free` and
    `cal_based` official subsets.
-3. **Can we make it faithful?** — the capstone. An auxiliary objective that reconstructs the
-   measured PTT **4×'s how decodable PTT is** (probe R² 0.12 → 0.52), yet the **donor-swap**
-   (patching only that PTT direction into the activations) leaves DBP unmoved. *Decodable is not
-   used; faithfulness is a causal property.*
+3. **Faithful to what?** — the capstone. An auxiliary objective reconstructs the **ABP pressure
+   waveform** from the shared features. This rebuilds the wave at **corr 0.91** and makes PTT
+   **~2× more decodable** (probe R² 0.13 → 0.29), yet the **donor-swap** leaves the causal PTT
+   response at chance. Running the audit across *candidate cues* (a mechanism profile) then shows
+   what the model *does* use: it is causally faithful to **PPG wave-shape / stiffness morphology**
+   (frac-correct 0.62) but **not** to arrival time (PAT frac 0.26). Accuracy, decodability, and
+   reconstruction fidelity are each independent of faithfulness — and the audit says faithful *to
+   what*, not just faithful/unfaithful. A reconstruct-then-read-off model (predict the pressure
+   wave, read BP off its peak/trough) is included as the faithful-by-design alternative.
 
 ## What's in here
 
 ```
 app_faithfulness.py        the demo (three tabs); reads precomputed results in data/
-mechlib.py                 self-contained toolkit: PTT detection, causal audits
-                           (input-shift + subspace donor-swap), linear probe, calibration
-precompute_capstone.py     regenerates data/capstone.* from the bundled subset (reproducible)
+mechlib.py                 self-contained toolkit: PTT detection, candidate-cue extraction,
+                           causal audits (input-shift + subspace donor-swap), mechanism
+                           profile, linear probe, calibration
+precompute_recon.py        regenerates data/capstone.* from the bundled subset (reproducible):
+                           vanilla vs ABP-waveform-reconstruction models, four-way dissociation,
+                           mechanism-faithfulness profile, reconstruct-then-read-off model
 notebooks/
   investigate_data.ipynb   what's in the data + verify the dataloader (channel identities)
   models_and_reconstruction.ipynb
@@ -58,7 +66,7 @@ in mmHg (its per-segment peak is the SBP label).
 ## Reproduce
 
 ```bash
-python precompute_capstone.py          # regenerates data/capstone.* from data/vitaldb_mini.npz
+python precompute_recon.py             # regenerates data/capstone.* from data/vitaldb_mini.npz
 jupyter lab notebooks/                 # run the notebooks end-to-end
 ```
 
@@ -70,23 +78,31 @@ subsets (not bundled); everything else regenerates from `data/vitaldb_mini.npz`.
 The synthetic sandbox is the **rigorously validated** part: the law is true by construction and
 the donor-swap correctly tracks faithfulness.
 
-On **real data**, we established a prerequisite that turned out to be decisive: **the PTT→BP law
-is essentially absent in resting ICU monitoring data.** Across *two* datasets (VitalDB and raw
-MIMIC-BP), with physiological PTT detectors, quality filtering, and SBP/DBP/MAP targets, the
-within-subject PTT–BP correlation sits at chance (frac-negative ≈ 0.47–0.54). This is not a
-preprocessing or channel-alignment artifact (MIMIC preserves the true 298 ms lag and still shows
-no law) — single-site PAT is simply a weak BP surrogate without active BP manipulation. The
-strong, real relationship in this data is **full pressure-waveform morphology** (ECG+PPG → ABP
-reconstruction, corr **0.93**).
+On **real data**, the interval detectable from ECG→PPG is **pulse *arrival* time (PAT)**, not
+clean pulse transit time: PAT = pre-ejection period (PEP) + vascular transit, and PEP moves
+independently of BP — the same direction as PTT in exercise, the opposite under vasoconstriction
+([Payne 2006](https://journals.physiology.org/doi/abs/10.1152/japplphysiol.00980.2011);
+[Mukkamala review](https://pmc.ncbi.nlm.nih.gov/articles/PMC9088838/)). In resting ICU data the
+PAT→BP law is therefore weak and can *invert*: our faithful-by-construction analytic control
+(detect PAT → map to DBP) fits a **positive** slope and fails its own audit. So a model that
+"fails the PTT audit" here is not necessarily unfaithful — it is being tested against a law the
+modality does not cleanly express.
 
-Consequently the real-data audit results here should be read as *"applying the method to real
-signals where the PTT law is weak,"* not as a clean faithfulness verdict. A crisp real-data
-positive control needs **BP-manipulation data** (e.g. the PhysioNet Pulse Transit Time PPG
-exercise dataset); that investigation is ongoing.
+The law ECG+PPG *does* express is **pulse-wave morphology / arterial stiffness** — augmentation,
+reflected-wave timing, and second-derivative stiffness indices read off the PPG *shape*
+([El-Hajj & Kyriacou](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9849280/)). The reconstruction
+model rebuilds the full pressure wave at **corr 0.91**, and the **mechanism profile** confirms it:
+the model is causally faithful to the wave-shape/stiffness cue (frac 0.62) while failing arrival
+time (frac 0.26). This turns the audit from a pass/fail test into **mechanism attribution** —
+*faithful to what* — and points to reconstruction as a route to faithful-by-design models.
+
+A crisp positive control for the *transit-time* law specifically needs **BP-manipulation data**
+(e.g. the PhysioNet Pulse Transit Time PPG exercise dataset); that investigation is ongoing.
 
 ## Takeaway
 
-A model can be **accurate** and have the mechanism **decodable** in its activations, yet still
-be **right for the wrong reason** — not causally using it. Standard evaluation and linear
-probes miss this; a causal donor-swap catches it. And a faithfulness audit is only meaningful
-when the governing law is actually present in the data — verifying that is step one.
+A model can be **accurate**, have the mechanism **decodable** in its activations, and even
+**reconstruct** the target waveform faithfully, yet still not causally use a given mechanism.
+These four properties are independent; only a causal audit separates them. Generalized across
+candidate cues, the same audit answers *which* physiology a model uses — and a faithfulness
+verdict is only meaningful once you check the governing law is actually present in the data.
