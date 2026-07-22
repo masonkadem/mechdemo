@@ -52,6 +52,10 @@ notebooks/
                            CNN / local self-attention / local cross-attention regressors,
                            convergence curves, calibration, and ABP reconstruction
                            (conv + cross-attention), reconstruct-then-read-off BP
+  faithfulness_across_architectures.ipynb
+                           minimal, reproducible: MLP vs 1D-CNN vs small Transformer all
+                           reach accuracy yet fail the causal PTT audit -- faithfulness is a
+                           property of the data + objective, not the architecture
 data/
   vitaldb_mini.npz         bundled VitalDB subset, official patient-disjoint splits
                            (float16, ~42 MB): ECG/PPG/ABP waveforms + [SBP, DBP] labels
