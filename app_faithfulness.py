@@ -214,13 +214,7 @@ with tab_real:
         Xte, yte, fs = real_test_split()
         dbp = yte[:, 1]
         t_axis = np.arange(Xte.shape[1]) / fs
-
-        st.caption("Example segment — the z-scored ECG/PPG the model actually sees")
-        fig, ax = plt.subplots(figsize=(6.5, 2))
-        ax.plot(t_axis, Xte[0, :, 0], color=NAVY, lw=1, label="ECG")
-        ax.plot(t_axis, Xte[0, :, 1], color=RED, lw=1, label="PPG")
-        ax.set_xlabel("time (s)"); ax.set_title(f"DBP = {dbp[0]:.0f} mmHg", fontsize=9)
-        ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
+        FS = (3.5, 2.3)                                     # compact figure size, like the synthetic tab
 
         with torch.no_grad():
             pred = net(torch.tensor(Xte, dtype=torch.float32)).numpy()
@@ -232,66 +226,59 @@ with tab_real:
         m[2].metric("Test DBP MAE (mmHg)", f"{mae:.1f}")
         m[3].metric("vs. predict-the-mean", f"{base:.1f}", f"{mae - base:+.1f}", delta_color="inverse")
 
-        st.caption("Training convergence")
-        fig, ax = plt.subplots(figsize=(5.5, 2.8))
-        ax.plot(hist["train_mae"], color=NAVY, lw=1.4, label="train MAE")
-        ax.plot(hist["val_mae"], color=RED, lw=1.4, ls="--", label="val MAE")
-        ax.set_xlabel("epoch"); ax.set_ylabel("MAE (mmHg)")
-        ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
-
         scalars = real_scalars(Xte, fs)
         stages = real_layer_features(net, Xte, cfg["depth"])
-        r2_pat = [mechlib.linear_probe(f, scalars["pat"]) for f in stages.values()]
-        r2_per = [mechlib.linear_probe(f, scalars["period"]) for f in stages.values()]
+        xs = list(stages)
 
-        st.caption("Linear-probe decodability by layer")
-        fig, ax = plt.subplots(figsize=(5.5, 3))
-        ax.plot(list(stages), r2_pat, "-o", ms=4, color=NAVY, label="PAT (arrival time)")
-        ax.plot(list(stages), r2_per, "-o", ms=4, color=RED, label="cardiac period (f2f)")
-        ax.axhline(0, color="#bbb", lw=.8)
-        ax.set_ylabel("probe R²"); ax.legend(fontsize=7, frameon=False)
-        plt.setp(ax.get_xticklabels(), rotation=15, ha="right")
-        fig.tight_layout(); st.pyplot(fig)
+        row1 = st.columns(2)
+        with row1[0]:
+            st.caption("Example segment — z-scored ECG/PPG the model sees")
+            fig, ax = plt.subplots(figsize=FS)
+            ax.plot(t_axis, Xte[0, :, 0], color=NAVY, lw=1, label="ECG")
+            ax.plot(t_axis, Xte[0, :, 1], color=RED, lw=1, label="PPG")
+            ax.set_xlabel("time (s)"); ax.set_title(f"DBP = {dbp[0]:.0f} mmHg", fontsize=8)
+            ax.legend(fontsize=6.5, frameon=False); fig.tight_layout(); st.pyplot(fig)
+        with row1[1]:
+            st.caption("Training convergence")
+            fig, ax = plt.subplots(figsize=FS)
+            ax.plot(hist["train_mae"], color=NAVY, lw=1.3, label="train MAE")
+            ax.plot(hist["val_mae"], color=RED, lw=1.3, ls="--", label="val MAE")
+            ax.set_xlabel("epoch"); ax.set_ylabel("MAE (mmHg)")
+            ax.legend(fontsize=6.5, frameon=False); fig.tight_layout(); st.pyplot(fig)
 
-        st.caption("Sanity check — do the PAT / cardiac-period fiducials land where they should?")
-        ex = 0
-        ez = (Xte[ex, :, 0] - Xte[ex, :, 0].mean()) / (Xte[ex, :, 0].std() + 1e-8)
-        pz = (Xte[ex, :, 1] - Xte[ex, :, 1].mean()) / (Xte[ex, :, 1].std() + 1e-8)
-        r_peaks, _ = find_peaks(ez, distance=max(int(0.3 * fs), 1), prominence=0.5)
-        feet = []
-        for rp in r_peaks:
-            lo, hi = rp + max(int(0.05 * fs), 1), min(rp + int(0.5 * fs), len(pz))
-            if lo < hi:
-                feet.append(lo + int(np.argmin(pz[lo:hi])))
-        fig, ax = plt.subplots(figsize=(6.5, 2.2))
-        ax.plot(t_axis, Xte[ex, :, 0], color=NAVY, lw=1, label="ECG")
-        ax.plot(t_axis, Xte[ex, :, 1], color=RED, lw=1, label="PPG")
-        ax.scatter(r_peaks / fs, Xte[ex, r_peaks, 0], color=NAVY, marker="^", zorder=5, label="R-peak")
-        if feet:
-            ax.scatter(np.array(feet) / fs, Xte[ex, feet, 1], color=RED, marker="v", zorder=5,
-                      label="PPG foot")
-        ax.legend(fontsize=7, frameon=False, ncol=4); fig.tight_layout(); st.pyplot(fig)
+        row2 = st.columns(2)
+        with row2[0]:
+            st.caption("Linear-probe decodability by layer")
+            r2_pat = [mechlib.linear_probe(f, scalars["pat"]) for f in stages.values()]
+            r2_per = [mechlib.linear_probe(f, scalars["period"]) for f in stages.values()]
+            fig, ax = plt.subplots(figsize=FS)
+            ax.plot(xs, r2_pat, "-o", ms=3.5, color=NAVY, lw=1.3, label="PAT (arrival time)")
+            ax.plot(xs, r2_per, "-o", ms=3.5, color=RED, lw=1.3, label="cardiac period (f2f)")
+            ax.axhline(0, color="#bbb", lw=.8)
+            ax.set_ylabel("probe R²"); ax.legend(fontsize=6.5, frameon=False)
+            plt.setp(ax.get_xticklabels(), rotation=15, ha="right")
+            fig.tight_layout(); st.pyplot(fig)
+        with row2[1]:
+            st.caption("Causal test — shift PPG in time, watch predicted DBP")
+
+            @torch.no_grad()
+            def predict_fn(Xd):
+                return net(torch.tensor(Xd, dtype=torch.float32)).numpy()
+
+            shift_ms, curve, slope = mechlib.input_shift_audit(predict_fn, Xte, fs)
+            fig, ax = plt.subplots(figsize=FS)
+            ax.axvline(0, color=GREY, lw=.8, ls=":")
+            ax.plot(shift_ms, curve, "-o", ms=3.5, color=NAVY)
+            ax.set_xlabel("imposed PPG shift (ms)"); ax.set_ylabel("pred. DBP (mmHg)")
+            ax.set_title(f"slope {slope:+.3f} mmHg/ms (faithful<0)", fontsize=8)
+            fig.tight_layout(); st.pyplot(fig)
+
         st.caption(
-            f"PAT (^→v) median {np.nanmedian(scalars['pat']) * 1000:.0f} ms · "
-            f"cardiac period median {np.nanmedian(scalars['period']):.2f} s "
-            f"({60 / np.nanmedian(scalars['period']):.0f} bpm) — both physiological."
-        )
-
-        st.caption("Causal test — shift the PPG channel in time, watch predicted DBP")
-
-        @torch.no_grad()
-        def predict_fn(Xd):
-            return net(torch.tensor(Xd, dtype=torch.float32)).numpy()
-
-        shift_ms, curve, slope = mechlib.input_shift_audit(predict_fn, Xte, fs)
-        fig, ax = plt.subplots(figsize=(5.5, 2.8))
-        ax.plot(shift_ms, curve, "-o", ms=4, color=NAVY)
-        ax.set_xlabel("imposed PPG shift (ms)"); ax.set_ylabel("predicted DBP (mmHg)")
-        ax.set_title(f"slope = {slope:+.3f} mmHg/ms  (faithful = negative)", fontsize=9)
-        fig.tight_layout(); st.pyplot(fig)
-
-        st.caption("Input-space intervention: negative slope = the model uses arrival time; "
-                   "flat/positive = it doesn't, however decodable PAT looked above.")
+            f"Decodable ≠ used: **cardiac period** is the most linearly decodable cue, yet the causal "
+            f"shift test is flat (slope {slope:+.3f} mmHg/ms) — the model isn't using arrival-time "
+            f"physics (PAT). Population PAT median {np.nanmedian(scalars['pat']) * 1000:.0f} ms, "
+            f"cardiac period {np.nanmedian(scalars['period']):.2f} s "
+            f"({60 / np.nanmedian(scalars['period']):.0f} bpm).")
 
 # ── FAITHFUL TO WHAT? ─────────────────────────────────────────────────────────
 with tab_cap:
