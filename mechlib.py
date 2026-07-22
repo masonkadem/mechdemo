@@ -8,7 +8,7 @@ Verified channel identities in the cached data:  ECG = 0, PPG = 1, ABP = 2.
 """
 import numpy as np
 import torch
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, savgol_filter
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score
@@ -137,6 +137,161 @@ def donor_swap(feats, head, ptt, target=1, n_pairs=1500, seed=0):
     frac_correct = float(np.mean((dPTT > 0) == (dBP < 0)))  # longer PTT -> lower BP
     return {"donor_swap_slope": slope, "donor_swap_frac_correct": frac_correct,
             "dPTT_ms": (dPTT * 1000), "dBP": dBP}
+
+
+# ----------------------------------------------------------------- mechanism profile
+def _ppg_fiducials(ppg_z, r_peaks, fs):
+    """Per-beat PPG (foot, systolic-peak) index pairs following each ECG R-peak."""
+    feet, peaks = [], []
+    for rp in r_peaks:
+        lo = rp + max(int(0.05 * fs), 1); hi = min(rp + int(0.5 * fs), len(ppg_z))
+        if lo >= hi:
+            continue
+        foot = lo + int(np.argmin(ppg_z[lo:hi]))
+        hi2 = min(foot + int(0.4 * fs), len(ppg_z))
+        if foot + 1 >= hi2:
+            continue
+        peak = foot + int(np.argmax(ppg_z[foot:hi2]))
+        feet.append(foot); peaks.append(peak)
+    return feet, peaks
+
+
+def _pulse_feet(wz, fs):
+    f, _ = find_peaks(-wz, distance=max(int(0.4 * fs), 1), prominence=0.3)
+    return f
+
+
+def wave_morphology(wave, fs):
+    """Shape cues from ONE pulsatile wave (PPG or ABP), median over beats (nan if too few):
+      rise -- systolic rise time (s): foot -> systolic peak
+      aix  -- reflection / augmentation index: (secondary-peak height) / (pulse height)
+      apg  -- second-derivative (acceleration) b/a ratio: an arterial-stiffness index."""
+    wz = _z(wave); feet = _pulse_feet(wz, fs)
+    out = {"rise": np.nan, "aix": np.nan, "apg": np.nan}
+    if len(feet) < 3:
+        return out
+    d2 = np.gradient(np.gradient(savgol_filter(wz, max(int(0.05 * fs) | 1, 5), 3)))
+    rises, aixs, apgs = [], [], []
+    for k in range(len(feet) - 1):
+        s, e = feet[k], feet[k + 1]
+        if not (int(0.3 * fs) < e - s < int(1.5 * fs)):
+            continue
+        beat = wz[s:e]; pk = int(np.argmax(beat))
+        if pk < 2 or pk > len(beat) - 2:
+            continue
+        pp = beat[pk] - beat[0]
+        if pp < 1e-3:
+            continue
+        rises.append(pk / fs)
+        tail = beat[pk + int(0.05 * fs):]
+        if len(tail) > 3:
+            sp, _ = find_peaks(tail)
+            if len(sp):
+                aixs.append((tail[sp].max() - beat[0]) / pp)
+        d2b = d2[s:e]; ap, _ = find_peaks(d2b, prominence=0.02 * (d2b.max() - d2b.min() + 1e-9))
+        if len(ap):
+            ai = ap[0]; hi = min(ai + int(0.25 * fs), len(d2b))
+            if ai + 1 < hi and abs(d2b[ai]) > 1e-9:
+                apgs.append(d2b[ai:hi].min() / d2b[ai])
+    return {"rise": float(np.median(rises)) if len(rises) >= 2 else np.nan,
+            "aix": float(np.median(aixs)) if len(aixs) >= 2 else np.nan,
+            "apg": float(np.median(apgs)) if len(apgs) >= 2 else np.nan}
+
+
+def compute_morphology(X, fs, ch):
+    """Per-segment {rise, aix, apg} from channel `ch` of a batch (N, L, C). Use on the ABP
+    channel to get ground-truth shape cues for validating the PPG-derived ones."""
+    keys = ["rise", "aix", "apg"]; acc = {k: [] for k in keys}
+    for i in range(len(X)):
+        m = wave_morphology(X[i, :, ch], fs)
+        for k in keys:
+            acc[k].append(m[k])
+    return {k: np.array(v) for k, v in acc.items()}
+
+
+def segment_scalars(ecg, ppg, fs):
+    """Candidate BP cues from one ECG+PPG segment (nan where undetectable):
+      pat            -- ECG-R -> PPG-foot delay (s); arrival-time law (PAT, PEP-confounded)
+      rise/aix/apg   -- PPG wave-shape / arterial-stiffness morphology cues
+      hr             -- heart rate (bpm); exploratory, ambiguous BP sign
+      amp            -- PPG pulse amplitude (au); negative control (removed by per-segment norm)."""
+    ez, pz = _z(ecg), _z(ppg)
+    r, _ = find_peaks(ez, distance=max(int(0.3 * fs), 1), prominence=0.5)
+    out = {"pat": np.nan, "hr": np.nan, "amp": np.nan, "period": np.nan}
+    out.update(wave_morphology(ppg, fs))
+    pf = _pulse_feet(pz, fs)                                  # cardiac period from PPG feet
+    if len(pf) >= 3:
+        out["period"] = float(np.median(np.diff(pf)) / fs)
+    if len(r) < 3:
+        return out
+    pats = []
+    for rp in r:
+        lo = rp + max(int(0.05 * fs), 1); hi = min(rp + int(0.5 * fs), len(pz))
+        if lo >= hi:
+            continue
+        ptt = (lo + int(np.argmin(pz[lo:hi])) - rp) / fs
+        if 0.05 < ptt < 0.5:
+            pats.append(ptt)
+    if len(pats) >= 2:
+        out["pat"] = float(np.median(pats))
+    rr = np.diff(r) / fs; rr = rr[(rr > 0.3) & (rr < 2.0)]
+    if len(rr) >= 1:
+        out["hr"] = float(60.0 / np.median(rr))
+    feet, peaks = _ppg_fiducials(pz, r, fs)
+    amps = [pz[pk] - pz[ft] for ft, pk in zip(feet, peaks)]
+    if len(amps) >= 2:
+        out["amp"] = float(np.median(amps))
+    return out
+
+
+def compute_scalars(X, fs, ecg_pos=ECG, ppg_pos=PPG):
+    """Per-segment cue dict {pat, rise, aix, apg, hr, period, amp} for a batch (N, L, C)."""
+    keys = ["pat", "rise", "aix", "apg", "hr", "period", "amp"]; acc = {k: [] for k in keys}
+    for i in range(len(X)):
+        s = segment_scalars(X[i, :, ecg_pos], X[i, :, ppg_pos], fs)
+        for k in keys:
+            acc[k].append(s.get(k, np.nan))
+    return {k: np.array(v) for k, v in acc.items()}
+
+
+def subspace_swap(feats, head, mech, target=1, expect_sign=-1, n_pairs=1500, seed=0):
+    """Generalized activation-space donor-swap for ANY scalar cue `mech`. Patch only the
+    linearly-decodable direction of `mech` from a donor into a base activation and measure
+    how the BP output moves. `expect_sign` is the physiological sign of dBP/dmech
+    (-1 = longer cue -> lower BP, like PAT/rise; 0 = no expected sign, e.g. HR/control).
+    Returns slope (mmHg per cue-unit) and frac_correct (share of pairs in the expected
+    direction; 0.5 = chance)."""
+    m = np.isfinite(mech); feats, mech = feats[m], mech[m]
+    if len(feats) < 10 or np.std(mech) < 1e-9:
+        return {"slope": float("nan"), "frac_correct": float("nan"), "dependence": float("nan")}
+    u = probe_direction(feats, mech)
+    rng = np.random.default_rng(seed)
+    base = rng.integers(0, len(feats), n_pairs); donor = rng.integers(0, len(feats), n_pairs)
+    proj = (feats[donor] - feats[base]) @ u
+    dBP = head(feats[base] + np.outer(proj, u))[:, target] - head(feats[base])[:, target]
+    dM = mech[donor] - mech[base]
+    slope = float(np.polyfit(dM, dBP, 1)[0])
+    fr_raw = float(np.mean(np.sign(dBP) == np.sign(dM)))          # positive-ref association
+    ref = expect_sign if expect_sign != 0 else 1
+    frac = float(np.mean(np.sign(dBP) == ref * np.sign(dM)))      # physiological-direction frac
+    dependence = max(fr_raw, 1 - fr_raw)                          # sign-agnostic: does output USE it?
+    return {"slope": slope, "frac_correct": frac, "dependence": dependence}
+
+
+def mechanism_profile(feats, head, scalars, target=1):
+    """Run subspace_swap across the candidate cues -> 'faithful to WHAT'. `scalars` is the
+    dict from compute_scalars. Expected signs encode the textbook physiology per cue."""
+    specs = [("PAT (arrival time)", "pat", -1), ("PPG rise-time (morphology)", "rise", -1),
+             ("augmentation index (morphology)", "aix", +1), ("APG stiffness (morphology)", "apg", +1),
+             ("cardiac period (f2f)", "period", 0), ("heart rate", "hr", 0),
+             ("PPG amplitude (control)", "amp", 0)]
+
+    def entry(key, sgn):
+        s = subspace_swap(feats, head, scalars[key], target, sgn)
+        s["expect_sign"] = sgn
+        s["probe_r2"] = max(linear_probe(feats, scalars[key]), 0.0)   # how DECODABLE the cue is
+        return s
+    return {name: entry(key, sgn) for name, key, sgn in specs if key in scalars}
 
 
 def linear_probe(feats, target):
