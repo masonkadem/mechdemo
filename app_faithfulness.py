@@ -16,19 +16,26 @@ plt.rcParams.update({"axes.spines.top": False, "axes.spines.right": False, "font
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 # ── synthetic model ──────────────────────────────────────────────────────────
+# Two input channels: an ARRIVAL-TIME channel (ptt, the physics signal) and a SEPARATE
+# CONFOUND channel that also correlates with BP (the real-data analogue of an HR shortcut).
+# The physics branch reads ptt; the shortcut branch reads the confound. α mixes them.
 B, BP_MEAN, BP_STD = 80.0, 120.0, 17.3
 A_of = lambda p: 10.0 * 0.4 ** p
 ptt_from_bp = lambda bp, p: (A_of(p) / (bp - B)) ** (1.0 / p)
 bp_from_ptt = lambda ptt, p: A_of(p) / ptt ** p + B
 ALPHAS = [0.0, 0.25, 0.5, 0.75, 1.0]
 PS = [1.0, 1.5, 2.0, 2.5, 3.0]
+CONF_NOISE = 0.35
+SHIFT_MS = np.array([-30, -20, -10, 0, 10, 20, 30])       # imposed arrival-time perturbations
 
 
 def sample(n, seed, p):
     rng = np.random.default_rng(seed)
     bp = rng.uniform(90, 150, n)
-    ptt = ptt_from_bp(bp, p) + rng.normal(0, 0.006, n)
-    return (torch.tensor(ptt, dtype=torch.float32).reshape(-1, 1),
+    ptt = ptt_from_bp(bp, p) + rng.normal(0, 0.006, n)                # arrival-time channel
+    conf = (bp - BP_MEAN) / BP_STD + rng.normal(0, CONF_NOISE, n)     # separate confound channel
+    X = np.stack([ptt, conf], 1)
+    return (torch.tensor(X, dtype=torch.float32),
             torch.tensor((bp - BP_MEAN) / BP_STD, dtype=torch.float32))
 
 
@@ -36,49 +43,54 @@ class Net(nn.Module):
     def __init__(self, alpha):
         super().__init__()
         path = lambda: nn.Sequential(nn.Linear(1, 32), nn.ReLU(), nn.Linear(32, 1))
-        self.physics, self.shortcut = path(), path()
+        self.physics, self.shortcut = path(), path()     # physics <- ptt, shortcut <- confound
         self.head = nn.Sequential(nn.Linear(1, 32), nn.ReLU(), nn.Linear(32, 1))
         self.alpha = alpha
 
-    def code(self, ptt):
-        return self.alpha * self.physics(ptt) + (1 - self.alpha) * self.shortcut(ptt)
+    def code(self, X):
+        return self.alpha * self.physics(X[:, 0:1]) + (1 - self.alpha) * self.shortcut(X[:, 1:2])
 
-    def forward(self, ptt):
-        return self.head(self.code(ptt)).squeeze(1)
+    def forward(self, X):
+        return self.head(self.code(X)).squeeze(1)
 
 
-def accuracy(net, pe, ye):
-    return r2_score(ye.numpy(), net(pe).detach().numpy())
+def accuracy(net, Xe, ye):
+    return r2_score(ye.numpy(), net(Xe).detach().numpy())
 
-def lin_probe(net, pe):
-    a = net.physics(pe).detach().numpy(); t = pe.numpy().ravel(); h = len(t) // 2
+def lin_probe(net, Xe):
+    """Is arrival-time (ptt) linearly decodable from the internal code? (Decodable ≠ used.)"""
+    a = net.code(Xe).detach().numpy(); t = Xe[:, 0].numpy(); h = len(t) // 2
     return r2_score(t[h:], Ridge().fit(a[:h], t[:h]).predict(a[h:]))
 
-def swap(net, pe, p):
-    d = torch.randperm(len(pe))
-    s = net.alpha * net.physics(pe[d]).detach() + (1 - net.alpha) * net.shortcut(pe).detach()
-    pr = net.head(s).squeeze(1).detach().numpy()
-    tg = (bp_from_ptt(pe[d].numpy().ravel(), p) - BP_MEAN) / BP_STD
-    return pr, tg, r2_score(tg, pr)
+def roll_curve(net, Xe):
+    """Perturbation audit: shift ONLY the arrival-time channel by ±ms and read mean predicted BP."""
+    out = []
+    for dm in SHIFT_MS:
+        Xs = Xe.clone(); Xs[:, 0] = Xe[:, 0] + dm / 1000.0
+        out.append(float((net(Xs).detach().numpy() * BP_STD + BP_MEAN).mean()))
+    return np.array(out)
+
+def roll_slope(net, Xe):
+    return float(np.polyfit(SHIFT_MS, roll_curve(net, Xe), 1)[0])    # mmHg per ms (faithful < 0)
 
 
 @st.cache_resource
 def train_grid():
     models, tl, vl, evals, scores = {}, {}, {}, {}, {}
     for p in PS:
-        tr_p, tr_b = sample(3000, 0, p); va_p, va_b = sample(1000, 1, p)
+        tr_X, tr_b = sample(3000, 0, p); va_X, va_b = sample(1000, 1, p)
         evals[p] = sample(1500, 7, p)
         for a in ALPHAS:
             torch.manual_seed(0); net = Net(a); opt = torch.optim.Adam(net.parameters(), 3e-3)
             th, vh = [], []
             for _ in range(400):
-                opt.zero_grad(); loss = ((net(tr_p) - tr_b) ** 2).mean()
+                opt.zero_grad(); loss = ((net(tr_X) - tr_b) ** 2).mean()
                 loss.backward(); opt.step(); th.append(loss.item())
-                with torch.no_grad(): vh.append(float(((net(va_p) - va_b) ** 2).mean()))
+                with torch.no_grad(): vh.append(float(((net(va_X) - va_b) ** 2).mean()))
             net.eval(); models[(a, p)] = net; tl[(a, p)] = th; vl[(a, p)] = vh
-            pe, ye = evals[p]
-            scores[(a, p)] = dict(acc=accuracy(net, pe, ye), lin=lin_probe(net, pe),
-                                  swap=swap(net, pe, p)[2])
+            Xe, ye = evals[p]
+            scores[(a, p)] = dict(acc=accuracy(net, Xe, ye), lin=lin_probe(net, Xe),
+                                  roll=roll_slope(net, Xe))
     return models, tl, vl, evals, scores
 
 
@@ -131,25 +143,27 @@ with tab_syn:
     alpha = cc[1].select_slider("α  (PTT pathway weight)", ALPHAS, 1.0)
     st.latex(rf"BP = \frac{{A}}{{PTT^{{{p:g}}}}} + B")
 
-    pe, ye = EV[p]; net = models[(alpha, p)]; s = SC[(alpha, p)]
-    pr, tg, _ = swap(net, pe, p)
+    Xe, ye = EV[p]; net = models[(alpha, p)]; s = SC[(alpha, p)]
+    curve = roll_curve(net, Xe); slope = s["roll"]
 
     m = st.columns(3)
     m[0].metric("Accuracy (R²)", f"{s['acc']:.2f}")
     m[1].metric("Linear probe (R²)", f"{s['lin']:.2f}")
-    m[2].metric("Donor-swap (R²)", f"{s['swap']:.2f}")
+    m[2].metric("Roll audit (mmHg/ms)", f"{slope:+.2f}")
 
-    if s["swap"] > 0.7:
-        st.success(f"Faithful — donor-swap R² {s['swap']:.2f}: the model routes through PTT.")
-    elif s["swap"] > 0.3:
-        st.warning(f"Partial — donor-swap R² {s['swap']:.2f}: PTT weakly used.")
+    if slope < -0.20:
+        st.success(f"Faithful — roll audit {slope:+.2f} mmHg/ms: longer arrival time lowers BP, "
+                   "the model uses arrival-time physics.")
+    elif slope < -0.08:
+        st.warning(f"Partial — roll audit {slope:+.2f} mmHg/ms: arrival time weakly used.")
     else:
-        st.error(f"Spurious — accurate (R² {s['acc']:.2f}) but does not causally use PTT "
-                 f"(donor-swap {s['swap']:.2f}).")
+        st.error(f"Spurious — accurate (R² {s['acc']:.2f}) but the roll audit is flat "
+                 f"({slope:+.2f} mmHg/ms): the model rides the confound, not arrival time.")
 
+    LIGHT = "#8a9bbf"
     g = st.columns(4)
     with g[0]:
-        st.caption("BP → PTT relationship")
+        st.caption("BP → arrival-time law")
         fig, ax = plt.subplots(figsize=(3, 2.5))
         bp = np.random.default_rng(0).uniform(90, 150, 300)
         ax.scatter(bp, ptt_from_bp(bp, p) + np.random.default_rng(1).normal(0, 0.006, 300),
@@ -163,27 +177,27 @@ with tab_syn:
         ax.set_yscale("log"); ax.set_xlabel("epoch"); ax.legend(fontsize=7, frameon=False)
         fig.tight_layout(); st.pyplot(fig)
     with g[2]:
-        st.caption("Donor-swap: output vs law")
+        st.caption("Roll audit — perturb arrival time")
         fig, ax = plt.subplots(figsize=(3, 2.5))
-        lim = [min(tg.min(), pr.min()), max(tg.max(), pr.max())]
-        ax.plot(lim, lim, "--", color="#bbb")
-        ax.scatter(tg, pr, s=5, alpha=.4, color=NAVY, edgecolor="none")
-        ax.set_xlabel("BP (law)"); ax.set_ylabel("BP (model)"); fig.tight_layout(); st.pyplot(fig)
+        ax.axvline(0, color="#ddd", lw=.8, zorder=0)
+        ax.plot(SHIFT_MS, curve, "-o", ms=3.5, color=NAVY)
+        ax.set_xlabel("arrival-time shift (ms)"); ax.set_ylabel("pred. BP (mmHg)")
+        ax.set_title(f"slope {slope:+.2f} (faithful<0)", fontsize=8)
+        fig.tight_layout(); st.pyplot(fig)
     with g[3]:
-        st.caption("Three audits vs α")
+        st.caption("Audits vs α")
+        rolls = np.array([-SC[(a, p)]["roll"] for a in ALPHAS])
+        use = rolls / max(rolls.max(), 1e-9)                  # arrival-time use, normalized to [0,1]
         fig, ax = plt.subplots(figsize=(3, 2.5))
-        ax.plot(ALPHAS, [SC[(a, p)]["swap"] for a in ALPHAS], "-o", ms=3, color=NAVY,
-                label="donor-swap")
-        ax.plot(ALPHAS, [SC[(a, p)]["acc"] for a in ALPHAS], "-o", ms=3, color=RED,
-                label="accuracy")
-        ax.plot(ALPHAS, [SC[(a, p)]["lin"] for a in ALPHAS], "-o", ms=3, color=GREY,
-                label="linear probe")
+        ax.plot(ALPHAS, [SC[(a, p)]["acc"] for a in ALPHAS], "-o", ms=3, color=GREY, label="accuracy")
+        ax.plot(ALPHAS, [SC[(a, p)]["lin"] for a in ALPHAS], "-s", ms=3, color=LIGHT, label="linear probe")
+        ax.plot(ALPHAS, use, "-o", ms=3.5, color=NAVY, label="roll audit")
         ax.axvline(alpha, color="k", ls=":", alpha=.4)
-        ax.set_xlabel("α"); ax.legend(fontsize=7, frameon=False)
+        ax.set_xlabel("α"); ax.legend(fontsize=6.5, frameon=False)
         fig.tight_layout(); st.pyplot(fig)
 
-    st.caption("Only the donor-swap tracks α. Accuracy and the linear probe stay flat — "
-               "the model can look good on both while ignoring PTT entirely.")
+    st.caption("Only the roll audit tracks α. Accuracy and the linear probe stay high at every α — "
+               "the model looks good on both while ignoring arrival time and riding the confound.")
 
 # ── REAL WAVEFORMS ────────────────────────────────────────────────────────────
 with tab_real:
