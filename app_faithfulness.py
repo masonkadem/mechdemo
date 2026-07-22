@@ -202,11 +202,6 @@ with tab_syn:
 # ── REAL WAVEFORMS ────────────────────────────────────────────────────────────
 with tab_real:
     DEFAULT_CKPT = os.path.join(DATA, "dbp_transformer.pt")
-    st.markdown(
-        "Probe-then-patch audit on a trained `WaveTransformer` (see "
-        "`notebooks/real_transformer_shortcut_walkthrough.ipynb`). Runs on a bundled example model — "
-        "upload your own `.pt` checkpoint to swap it in."
-    )
     up = st.file_uploader("Upload your own checkpoint (.pt) — optional", type=["pt"])
     ckpt_src = up if up is not None else (DEFAULT_CKPT if os.path.exists(DEFAULT_CKPT) else None)
 
@@ -228,17 +223,11 @@ with tab_real:
         Xte, yte, fs = real_test_split()
         dbp = yte[:, 1]
         t_axis = np.arange(Xte.shape[1]) / fs
-        FS = (3.5, 2.3)                                     # compact figure size, like the synthetic tab
+        FS = (3.0, 3.0)                                     # small square figures
 
-        with torch.no_grad():
-            pred = net(torch.tensor(Xte, dtype=torch.float32)).numpy()
-        mae = float(np.abs(pred - dbp).mean())
-        base = float(np.abs(dbp.mean() - dbp).mean())
-        m = st.columns(4)
+        m = st.columns(2)
         m[0].metric("Layers", cfg["depth"])
         m[1].metric("Attention heads", cfg["heads"])
-        m[2].metric("Test DBP MAE (mmHg)", f"{mae:.1f}")
-        m[3].metric("vs. predict-the-mean", f"{base:.1f}", f"{mae - base:+.1f}", delta_color="inverse")
 
         scalars = real_scalars(Xte, fs)
         stages = real_layer_features(net, Xte, cfg["depth"])
@@ -302,67 +291,76 @@ with tab_cap:
     else:
         cues = C["cues"]; cval = C.get("cue_validation", {})
         ctrl = cues.get("PPG amplitude (control)", {}).get("dep_mean", 0.5)   # chance floor
+        roll = C.get("roll_slope_mean", float("nan"))
         st.markdown(
-            f"A CNN reconstructs the **ABP pressure waveform** from ECG+PPG (corr {C['recon_corr']:.2f}) "
-            f"while predicting BP (calibrated DBP MAE {C['mae_cal_dbp']:.1f} mmHg). We then run the causal "
-            "donor-swap across a **battery of physiological cues** and ask: which does the BP output "
-            f"actually *depend on*?  ({C['n_seeds']} seeds; the amplitude **control** sets the chance "
-            f"floor at {ctrl:.2f}.)")
+            "**We train the model to reconstruct the ABP pressure waveform** from ECG+PPG, then ask what it "
+            "actually uses: **probe** it (is a cue linearly decodable?) and **roll-audit** it (shift the PPG "
+            "in time — does predicted BP causally respond the way arrival-time physics demands?).")
 
-        g = st.columns([3, 2])
+        m = st.columns(3)
+        m[0].metric("Reconstruction corr", f"{C['recon_corr']:.2f}")
+        m[1].metric("Calibrated DBP MAE", f"{C['mae_cal_dbp']:.1f} mmHg")
+        m[2].metric("Roll audit (mmHg/ms)", f"{roll:+.3f}")
+
+        g = st.columns(3)
         with g[0]:
-            st.caption("Causal dependence — how much the BP output uses each cue (control = chance)")
-            names = sorted(cues, key=lambda n: cues[n]["dep_mean"])
-            dep = [cues[n]["dep_mean"] for n in names]; er = [cues[n]["dep_std"] for n in names]
-            cols = [(NAVY if cues[n]["dep_mean"] - cues[n]["dep_std"] > ctrl + 0.05 else GREY)
-                    for n in names]
-            fig, ax = plt.subplots(figsize=(5.2, 3.2))
-            ax.barh(range(len(names)), dep, xerr=er, color=cols, error_kw=dict(lw=.8, ecolor="#555"))
-            ax.axvline(ctrl, color=RED, ls=":", lw=1.2, label=f"control floor {ctrl:.2f}")
-            ax.set_yticks(range(len(names)))
-            ax.set_yticklabels([n.replace(" (", "\n(") for n in names], fontsize=7.5)
-            ax.set_xlabel("causal dependence (0.5 = none)"); ax.set_xlim(0.4, 1)
-            ax.legend(fontsize=7, frameon=False, loc="lower right"); fig.tight_layout(); st.pyplot(fig)
-        with g[1]:
-            st.caption(f"ABP reconstruction — morphology corr {C['recon_corr']:.2f}")
-            fig, ax = plt.subplots(figsize=(4, 3.2))
+            st.caption("1 · Reconstruct the ABP wave")
+            fig, ax = plt.subplots(figsize=(3.4, 2.6))
             ax.plot(CV["t"], CV["abp_true"], color=GREEN, lw=1.5, label="true ABP")
             ax.plot(CV["t"], CV["abp_recon"], color=NAVY, lw=1.1, ls="--", label="reconstructed")
             ax.set_xlim(0, 5); ax.set_xlabel("time (s)"); ax.set_ylabel("ABP (norm.)")
-            ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
+            ax.set_title(f"corr {C['recon_corr']:.2f}", fontsize=8)
+            ax.legend(fontsize=6.5, frameon=False); fig.tight_layout(); st.pyplot(fig)
+        with g[1]:
+            st.caption("2 · Probe — what's decodable")
+            names = sorted(cues, key=lambda n: cues[n]["probe_mean"])
+            pr = [cues[n]["probe_mean"] for n in names]
+            top_dec = names[-1]
+            cols = [(NAVY if n == top_dec else GREY) for n in names]
+            fig, ax = plt.subplots(figsize=(3.4, 2.6))
+            ax.barh(range(len(names)), pr, color=cols)
+            ax.set_yticks(range(len(names)))
+            ax.set_yticklabels([n.split(" (")[0] for n in names], fontsize=6.5)
+            ax.set_xlabel("linear-probe R²"); fig.tight_layout(); st.pyplot(fig)
+        with g[2]:
+            st.caption("3 · Roll audit — shift PPG in time")
+            if "roll_ms" in CV:
+                fig, ax = plt.subplots(figsize=(3.4, 2.6))
+                ax.axvline(0, color="#ddd", lw=.8, zorder=0)
+                ax.plot(CV["roll_ms"], CV["roll_curve"], "-o", ms=3.5, color=NAVY)
+                ax.set_xlabel("PPG shift (ms)"); ax.set_ylabel("pred. DBP (mmHg)")
+                ax.set_title(f"slope {roll:+.3f} (faithful<0)", fontsize=8)
+                fig.tight_layout(); st.pyplot(fig)
+            else:
+                st.info("Re-run `python precompute_recon.py` to add the roll audit.")
 
-        st.markdown("**Decodable ≠ used** — every cue: how decodable vs how much the output uses it:")
-        rows = sorted(cues.items(), key=lambda kv: -kv[1]["dep_mean"])
-        md = ("| cue | decodable (probe R²) | causal dependence | physiological direction (frac) |\n"
-              "|---|---|---|---|\n")
-        for name, val in rows:
-            flag = " ← used" if val["dep_mean"] - val["dep_std"] > ctrl + 0.05 else ""
-            md += (f"| {name} | {val['probe_mean']:.2f} | {val['dep_mean']:.2f} ± {val['dep_std']:.2f}"
-                   f"{flag} | {val['frac_mean']:.2f} |\n")
-        st.markdown(md)
-        st.caption("Shape cues validate vs ground-truth ABP: "
-                   + ", ".join(f"{k} r={cval[k]:+.2f}"
-                               for k in ["rise", "aix", "apg", "kurt", "notch", "decay", "peak"]
-                               if k in cval and np.isfinite(cval[k]))
-                   + ". *Dependence* = does the output move with the cue (any direction); *physiological "
-                     "direction* = does it move the physiologically correct way (0.5 = chance).")
-
-        top = max(cues.items(), key=lambda kv: kv[1]["dep_mean"])
-        period = cues.get("cardiac period (f2f)", {})
-        if "period" in top[0].lower() or (period and period["dep_mean"] - period["dep_std"] > ctrl + 0.05):
+        top = max(cues.items(), key=lambda kv: kv[1]["probe_mean"])
+        if not (roll < -0.05):     # flat / wrong-signed roll audit -> not using arrival time
             st.error(
-                f"**Not faithful — the model rides a cardiac-timing (HR) shortcut.** Its strongest causal "
-                f"dependence is on **cardiac period / heart rate** (dep {period.get('dep_mean',float('nan')):.2f} "
-                f"± {period.get('dep_std',0):.2f}, well above the {ctrl:.2f} control), which is also the "
-                f"**most decodable** cue (probe R² {period.get('probe_mean',float('nan')):.2f}). The "
-                "pressure-morphology and transit-time cues sit near the control floor and their "
-                "physiological direction is unstable across seeds. So an accurate "
-                f"({C['mae_cal_dbp']:.1f} mmHg) ECG+PPG model reaches accuracy by exploiting the "
-                "**HR–BP correlation**, not the governing pressure physiology — the exact confounded "
-                "shortcut the cuffless-BP literature warns about. Reconstruction fidelity (0.9) and "
-                "decodability do not reveal this; only the causal audit does.")
+                f"**Reconstruction ≠ faithfulness.** The model rebuilds the ABP wave (corr "
+                f"{C['recon_corr']:.2f}) and **{top[0].split(' (')[0]}** is the most decodable cue (probe R² "
+                f"{top[1]['probe_mean']:.2f}) — yet the roll audit is flat (slope {roll:+.3f} mmHg/ms): "
+                "shifting arrival time barely moves predicted BP. So it rides the cardiac-timing (HR) "
+                "confound, not arrival-time physics. Only the causal roll audit reveals this — reconstruction "
+                "fidelity and decodability do not.")
         else:
-            st.info(
-                f"Across {C['n_seeds']} seeds the strongest causal dependence is on "
-                f"**{top[0].split(' (')[0]}** (dep {top[1]['dep_mean']:.2f}, control {ctrl:.2f}). "
-                "Decodability and causal use come apart cue-by-cue — only the causal audit separates them.")
+            st.success(
+                f"**Faithful** — roll audit {roll:+.3f} mmHg/ms (negative): predicted BP falls as arrival time "
+                "grows, so the model uses arrival-time physics, not just the confound.")
+
+        with st.expander("Full cue battery — decodable vs causally used (donor-swap dependence)"):
+            rows = sorted(cues.items(), key=lambda kv: -kv[1]["dep_mean"])
+            md = ("| cue | decodable (probe R²) | causal dependence | physiological direction (frac) |\n"
+                  "|---|---|---|---|\n")
+            for name, val in rows:
+                flag = " ← used" if val["dep_mean"] - val["dep_std"] > ctrl + 0.05 else ""
+                md += (f"| {name} | {val['probe_mean']:.2f} | {val['dep_mean']:.2f} ± {val['dep_std']:.2f}"
+                       f"{flag} | {val['frac_mean']:.2f} |\n")
+            st.markdown(md)
+            st.caption("Shape cues validate vs ground-truth ABP: "
+                       + ", ".join(f"{k} r={cval[k]:+.2f}"
+                                   for k in ["rise", "aix", "apg", "kurt", "notch", "decay", "peak"]
+                                   if k in cval and np.isfinite(cval[k]))
+                       + f". Control floor {ctrl:.2f}. *Dependence* = does the output move with the cue "
+                         "(any direction); *physiological direction* = the physiologically correct way "
+                         "(0.5 = chance).")

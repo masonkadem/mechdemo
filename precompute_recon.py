@@ -18,7 +18,7 @@ import json, os, numpy as np, torch, torch.nn as nn
 import mechlib
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-LAM, EPOCHS, SEEDS = 1.0, 30, [0, 1, 2]
+LAM, EPOCHS, SEEDS = 1.0, 30, [0]          # single seed — fast
 ECG, PPG, ABP = mechlib.ECG, mechlib.PPG, mechlib.ABP
 CUE_CACHE = "data/_cue_cache_deep.npz"          # v2: mini_deep + tangent-foot PAT + extra morphology
 
@@ -124,22 +124,27 @@ def features_and_corr(net):
 
 print(f"training reconstruction model x{len(SEEDS)} seeds (lambda={LAM}) ...", flush=True)
 per_seed, recon_corrs, maes, overlay = [], [], [], None
+roll_slopes, roll_ms_save, roll_curve_save = [], None, None
 for sd in SEEDS:
     net = train(sd)
     feats, rc = features_and_corr(net)
     head = lambda Fm: net.head(torch.tensor(Fm, dtype=torch.float32, device=device)).detach().cpu().numpy()
     prof = mechlib.mechanism_profile(feats, head, scalars_te, target=1)
     pred = mechlib.predict(net, Xte, device); mae = mechlib.calibrated_mae(pred, yte, gte, K=3)
-    per_seed.append(prof); recon_corrs.append(rc); maes.append(float(mae[1]))
+    # roll audit: shift PPG in time (input-space causal test), watch predicted DBP (faithful < 0)
+    roll_ms, roll_curve, roll_slope = mechlib.input_shift_audit(
+        lambda Xd: mechlib.predict(net, Xd, device)[:, 1], Xte, fs)
+    per_seed.append(prof); recon_corrs.append(rc); maes.append(float(mae[1])); roll_slopes.append(roll_slope)
     top = sorted(prof.items(), key=lambda kv: -kv[1]["probe_r2"])[0]
-    print(f"  seed {sd}  recon {rc:.2f}  MAEcal_DBP {mae[1]:.1f}  "
-          f"PAT frac {prof['PAT (arrival time)']['frac_correct']:.2f}  "
+    print(f"  seed {sd}  recon {rc:.2f}  MAEcal_DBP {mae[1]:.1f}  roll {roll_slope:+.3f} mmHg/ms  "
           f"top-decodable {top[0].split(' (')[0]} (R2 {top[1]['probe_r2']:.2f}, used {top[1]['frac_correct']:.2f})",
           flush=True)
     if sd == SEEDS[-1]:
         with torch.no_grad():
             rc_ex = net.reconstruct(torch.tensor(Xte[EX:EX + 1], device=device)).cpu().numpy()[0]
         overlay = (Ate[EX], rc_ex)
+        roll_ms_save, roll_curve_save = roll_ms, roll_curve
+        torch.save({"state_dict": net.state_dict(), "arch": "ReconCNN(w=32)"}, "data/recon_cnn.pt")
 
 # aggregate across seeds
 names = list(per_seed[0].keys())
@@ -158,12 +163,15 @@ for cue in ABP_KEYS:                              # validate every PPG shape cue
     cue_val[cue] = float(np.corrcoef(p[mm], a[mm])[0, 1]) if mm.sum() > 10 else float("nan")
 
 res = {"lambda": LAM, "n_seeds": len(SEEDS), "recon_corr": float(np.mean(recon_corrs)),
-       "mae_cal_dbp": float(np.mean(maes)), "cues": cues, "cue_validation": cue_val}
+       "mae_cal_dbp": float(np.mean(maes)), "cues": cues, "cue_validation": cue_val,
+       "roll_slope_mean": float(np.mean(roll_slopes)), "roll_slope_std": float(np.std(roll_slopes))}
 json.dump(res, open("data/capstone.json", "w"), indent=2)
 np.savez_compressed("data/capstone.npz",
     t=np.arange(L) / fs, abp_true=overlay[0], abp_recon=overlay[1],
     ex_ecg=Xte[EX, :, 0], ex_ppg=Xte[EX, :, 1], ex_fs=fs,
     ex_r_peaks=exf["r_peaks"], ex_feet=exf["feet"], ex_sys_peaks=exf["sys_peaks"],
-    ex_notches=exf["notches"], ex_pat_ms=exf["pat_ms"])
+    ex_notches=exf["notches"], ex_pat_ms=exf["pat_ms"],
+    roll_ms=roll_ms_save, roll_curve=roll_curve_save)
+print(f"roll audit slope: {np.mean(roll_slopes):+.3f} ± {np.std(roll_slopes):.3f} mmHg/ms", flush=True)
 print("cue validation (PPG vs ABP):", {k: round(v, 2) for k, v in cue_val.items()}, flush=True)
-print("wrote data/capstone.json + .npz", flush=True); print("DONE", flush=True)
+print("wrote data/capstone.json + .npz + recon_cnn.pt", flush=True); print("DONE", flush=True)
