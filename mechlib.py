@@ -217,8 +217,11 @@ def segment_scalars(ecg, ppg, fs):
       amp            -- PPG pulse amplitude (au); negative control (removed by per-segment norm)."""
     ez, pz = _z(ecg), _z(ppg)
     r, _ = find_peaks(ez, distance=max(int(0.3 * fs), 1), prominence=0.5)
-    out = {"pat": np.nan, "hr": np.nan, "amp": np.nan}
+    out = {"pat": np.nan, "hr": np.nan, "amp": np.nan, "period": np.nan}
     out.update(wave_morphology(ppg, fs))
+    pf = _pulse_feet(pz, fs)                                  # cardiac period from PPG feet
+    if len(pf) >= 3:
+        out["period"] = float(np.median(np.diff(pf)) / fs)
     if len(r) < 3:
         return out
     pats = []
@@ -242,8 +245,8 @@ def segment_scalars(ecg, ppg, fs):
 
 
 def compute_scalars(X, fs, ecg_pos=ECG, ppg_pos=PPG):
-    """Per-segment cue dict {pat, rise, aix, apg, hr, amp} for a batch (N, L, C)."""
-    keys = ["pat", "rise", "aix", "apg", "hr", "amp"]; acc = {k: [] for k in keys}
+    """Per-segment cue dict {pat, rise, aix, apg, hr, period, amp} for a batch (N, L, C)."""
+    keys = ["pat", "rise", "aix", "apg", "hr", "period", "amp"]; acc = {k: [] for k in keys}
     for i in range(len(X)):
         s = segment_scalars(X[i, :, ecg_pos], X[i, :, ppg_pos], fs)
         for k in keys:
@@ -260,7 +263,7 @@ def subspace_swap(feats, head, mech, target=1, expect_sign=-1, n_pairs=1500, see
     direction; 0.5 = chance)."""
     m = np.isfinite(mech); feats, mech = feats[m], mech[m]
     if len(feats) < 10 or np.std(mech) < 1e-9:
-        return {"slope": float("nan"), "frac_correct": float("nan")}
+        return {"slope": float("nan"), "frac_correct": float("nan"), "dependence": float("nan")}
     u = probe_direction(feats, mech)
     rng = np.random.default_rng(seed)
     base = rng.integers(0, len(feats), n_pairs); donor = rng.integers(0, len(feats), n_pairs)
@@ -268,9 +271,11 @@ def subspace_swap(feats, head, mech, target=1, expect_sign=-1, n_pairs=1500, see
     dBP = head(feats[base] + np.outer(proj, u))[:, target] - head(feats[base])[:, target]
     dM = mech[donor] - mech[base]
     slope = float(np.polyfit(dM, dBP, 1)[0])
+    fr_raw = float(np.mean(np.sign(dBP) == np.sign(dM)))          # positive-ref association
     ref = expect_sign if expect_sign != 0 else 1
-    frac = float(np.mean(np.sign(dBP) == ref * np.sign(dM)))
-    return {"slope": slope, "frac_correct": frac}
+    frac = float(np.mean(np.sign(dBP) == ref * np.sign(dM)))      # physiological-direction frac
+    dependence = max(fr_raw, 1 - fr_raw)                          # sign-agnostic: does output USE it?
+    return {"slope": slope, "frac_correct": frac, "dependence": dependence}
 
 
 def mechanism_profile(feats, head, scalars, target=1):
@@ -278,7 +283,8 @@ def mechanism_profile(feats, head, scalars, target=1):
     dict from compute_scalars. Expected signs encode the textbook physiology per cue."""
     specs = [("PAT (arrival time)", "pat", -1), ("PPG rise-time (morphology)", "rise", -1),
              ("augmentation index (morphology)", "aix", +1), ("APG stiffness (morphology)", "apg", +1),
-             ("heart rate", "hr", 0), ("PPG amplitude (control)", "amp", 0)]
+             ("cardiac period (f2f)", "period", 0), ("heart rate", "hr", 0),
+             ("PPG amplitude (control)", "amp", 0)]
 
     def entry(key, sgn):
         s = subspace_swap(feats, head, scalars[key], target, sgn)

@@ -1,43 +1,63 @@
 {
   "lambda": 1.0,
   "n_seeds": 3,
-  "recon_corr": 0.9082202461153542,
-  "mae_cal_dbp": 6.182699521382649,
+  "recon_corr": 0.8952787722534984,
+  "mae_cal_dbp": 6.348833401997884,
   "cues": {
     "PAT (arrival time)": {
-      "frac_mean": 0.2353333333333333,
-      "frac_std": 0.02560092590918163,
-      "probe_mean": 0.25682477766937023,
+      "frac_mean": 0.6291111111111111,
+      "frac_std": 0.00349955905511637,
+      "probe_mean": 0.21318202357299174,
+      "dep_mean": 0.721111111111111,
+      "dep_std": 0.00545237517617126,
       "expect_sign": -1
     },
     "PPG rise-time (morphology)": {
-      "frac_mean": 0.5148888888888888,
-      "frac_std": 0.1770351154397495,
-      "probe_mean": 0.12680169300664493,
+      "frac_mean": 0.3377777777777778,
+      "frac_std": 0.002060804110110153,
+      "probe_mean": 0.08601968533961786,
+      "dep_mean": 0.6282222222222221,
+      "dep_std": 0.001662958838566201,
       "expect_sign": -1
     },
     "augmentation index (morphology)": {
-      "frac_mean": 0.5228888888888888,
-      "frac_std": 0.16713209088164108,
-      "probe_mean": 0.09616452136625446,
+      "frac_mean": 0.5424444444444445,
+      "frac_std": 0.10255597688609733,
+      "probe_mean": 0.05268941782905127,
+      "dep_mean": 0.6104444444444445,
+      "dep_std": 0.011012899282990098,
       "expect_sign": 1
     },
     "APG stiffness (morphology)": {
-      "frac_mean": 0.5571111111111111,
-      "frac_std": 0.22406370346371707,
-      "probe_mean": 0.06631070712631988,
+      "frac_mean": 0.7544444444444444,
+      "frac_std": 0.004878777422244462,
+      "probe_mean": 0.06097112525453915,
+      "dep_mean": 0.7544444444444444,
+      "dep_std": 0.004878777422244462,
       "expect_sign": 1
     },
+    "cardiac period (f2f)": {
+      "frac_mean": 0.8137777777777777,
+      "frac_std": 0.03458251895515923,
+      "probe_mean": 0.5176628936936888,
+      "dep_mean": 0.8137777777777777,
+      "dep_std": 0.03458251895515923,
+      "expect_sign": 0
+    },
     "heart rate": {
-      "frac_mean": 0.3724444444444444,
-      "frac_std": 0.006999118110232704,
-      "probe_mean": 0.03875926270598806,
+      "frac_mean": 0.524,
+      "frac_std": 0.0928670894143684,
+      "probe_mean": 0.018158288629236113,
+      "dep_mean": 0.5955555555555555,
+      "dep_std": 0.008332592559667826,
       "expect_sign": 0
     },
     "PPG amplitude (control)": {
-      "frac_mean": 0.464,
-      "frac_std": 0.08236683978577969,
-      "probe_mean": 0.09365666304307403,
+      "frac_mean": 0.47222222222222215,
+      "frac_std": 0.08831649035789295,
+      "probe_mean": 0.033680138487175694,
+      "dep_mean": 0.5877777777777777,
+      "dep_std": 0.029435847801659643,
       "expect_sign": 0
     }
   },

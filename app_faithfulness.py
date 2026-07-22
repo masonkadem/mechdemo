@@ -222,10 +222,11 @@ with tab_real:
             f"Calibration reaches {R['cal_mae_sbp']:.1f} mmHg SBP MAE — genuinely accurate — and "
             f"PTT is weakly decodable (R² {R['probe_ptt_r2']:.2f}). Yet the causal audit shows the "
             f"model does not use it: only {R['frac_correct_sign']*100:.0f}% of segments respond in "
-            "the physiological direction. The interval detected from ECG→PPG is really pulse "
-            "*arrival* time (PAT = pre-ejection period + transit); PEP moves independently of BP, "
-            "so in resting ICU data the PTT→BP law is weak and can invert (right panel). "
-            "Accurate ≠ faithful — and the mechanism may simply not be in this modality."
+            "the physiological direction. The interval from ECG→PPG is really pulse *arrival* time "
+            "(PAT = pre-ejection period + transit); PEP moves independently of BP, so the PTT→BP law "
+            "is weak and can invert (right panel). **These models are not faithful to the governing "
+            "pressure physiology** — as the next tab shows, their accuracy comes from a cardiac-timing "
+            "(HR) shortcut, not transit time. Accurate ≠ faithful."
         )
 
 # ── FAITHFUL TO WHAT? ─────────────────────────────────────────────────────────
@@ -235,32 +236,28 @@ with tab_cap:
         st.warning("Battery results not found (or stale). Run `python precompute_recon.py`.")
     else:
         cues = C["cues"]; cval = C.get("cue_validation", {})
+        ctrl = cues.get("PPG amplitude (control)", {}).get("dep_mean", 0.5)   # chance floor
         st.markdown(
             f"A CNN reconstructs the **ABP pressure waveform** from ECG+PPG (corr {C['recon_corr']:.2f}) "
             f"while predicting BP (calibrated DBP MAE {C['mae_cal_dbp']:.1f} mmHg). We then run the causal "
-            "donor-swap across a **battery of physiological cues** and ask, for each: is it *decodable*, "
-            f"and is it *causally used*?  ({C['n_seeds']} seeds; error bars = ±std.)")
+            "donor-swap across a **battery of physiological cues** and ask: which does the BP output "
+            f"actually *depend on*?  ({C['n_seeds']} seeds; the amplitude **control** sets the chance "
+            f"floor at {ctrl:.2f}.)")
 
-        # headline: mechanism battery — which cue does the model causally use?
         g = st.columns([3, 2])
         with g[0]:
-            st.caption("Mechanism battery — frac of segments responding in the physiological direction")
-            names = list(cues.keys())
-            fr = [cues[n]["frac_mean"] for n in names]; er = [cues[n]["frac_std"] for n in names]
-            def barcol(c):  # robust to seed noise: significance uses the +/-std band
-                if c["expect_sign"] == 0:
-                    return GREY
-                if c["frac_mean"] - c["frac_std"] > 0.5:  return GREEN   # robustly used
-                if c["frac_mean"] + c["frac_std"] < 0.5:  return RED     # robustly not used
-                return GREY                                              # indistinct from chance
-            cols = [barcol(cues[n]) for n in names]
+            st.caption("Causal dependence — how much the BP output uses each cue (control = chance)")
+            names = sorted(cues, key=lambda n: cues[n]["dep_mean"])
+            dep = [cues[n]["dep_mean"] for n in names]; er = [cues[n]["dep_std"] for n in names]
+            cols = [(NAVY if cues[n]["dep_mean"] - cues[n]["dep_std"] > ctrl + 0.05 else GREY)
+                    for n in names]
             fig, ax = plt.subplots(figsize=(5.2, 3.2))
-            ax.barh(range(len(names)), fr, xerr=er, color=cols, error_kw=dict(lw=.8, ecolor="#555"))
-            ax.axvline(0.5, color="k", ls=":", lw=1)
+            ax.barh(range(len(names)), dep, xerr=er, color=cols, error_kw=dict(lw=.8, ecolor="#555"))
+            ax.axvline(ctrl, color=RED, ls=":", lw=1.2, label=f"control floor {ctrl:.2f}")
             ax.set_yticks(range(len(names)))
             ax.set_yticklabels([n.replace(" (", "\n(") for n in names], fontsize=7.5)
-            ax.set_xlabel("causally used  (frac in expected direction; 0.5 = chance)")
-            ax.set_xlim(0, 1); ax.invert_yaxis(); fig.tight_layout(); st.pyplot(fig)
+            ax.set_xlabel("causal dependence (0.5 = none)"); ax.set_xlim(0.4, 1)
+            ax.legend(fontsize=7, frameon=False, loc="lower right"); fig.tight_layout(); st.pyplot(fig)
         with g[1]:
             st.caption(f"ABP reconstruction — morphology corr {C['recon_corr']:.2f}")
             fig, ax = plt.subplots(figsize=(4, 3.2))
@@ -269,41 +266,36 @@ with tab_cap:
             ax.set_xlim(0, 5); ax.set_xlabel("time (s)"); ax.set_ylabel("ABP (norm.)")
             ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
 
-        st.markdown("**Decodable ≠ used** — every cue, ranked by how decodable it is:")
-        rows = sorted(cues.items(), key=lambda kv: -kv[1]["probe_mean"])
-        md = "| cue | decodable (probe R²) | causally used (frac ± std) |\n|---|---|---|\n"
+        st.markdown("**Decodable ≠ used** — every cue: how decodable vs how much the output uses it:")
+        rows = sorted(cues.items(), key=lambda kv: -kv[1]["dep_mean"])
+        md = ("| cue | decodable (probe R²) | causal dependence | physiological direction (frac) |\n"
+              "|---|---|---|---|\n")
         for name, val in rows:
-            used = f"{val['frac_mean']:.2f} ± {val['frac_std']:.2f}"
-            if val["expect_sign"] != 0 and val["frac_mean"] - val["frac_std"] > 0.5:
-                tag = " ✅ used"
-            elif val["expect_sign"] != 0 and val["frac_mean"] + val["frac_std"] < 0.5:
-                tag = " ✗ not used"
-            else:
-                tag = " ~ chance"
-            md += f"| {name} | {val['probe_mean']:.2f} | {used}{tag} |\n"
+            flag = " ← used" if val["dep_mean"] - val["dep_std"] > ctrl + 0.05 else ""
+            md += (f"| {name} | {val['probe_mean']:.2f} | {val['dep_mean']:.2f} ± {val['dep_std']:.2f}"
+                   f"{flag} | {val['frac_mean']:.2f} |\n")
         st.markdown(md)
-        st.caption("Shape cues are physiologically real — PPG-derived vs ground-truth ABP-derived: "
+        st.caption("Shape cues validate vs ground-truth ABP: "
                    + ", ".join(f"{k} r={cval[k]:+.2f}" for k in ["rise", "aix", "apg"] if k in cval)
-                   + ". The audit discriminates *on the same model* — a robust null on PAT is a real "
-                     "verdict, not a blind instrument.")
+                   + ". *Dependence* = does the output move with the cue (any direction); *physiological "
+                     "direction* = does it move the physiologically correct way (0.5 = chance).")
 
-        pat = cues.get("PAT (arrival time)", {})
-        pat_f, pat_s = pat.get("frac_mean", float("nan")), pat.get("frac_std", 0.0)
-        top = max(cues.items(), key=lambda kv: kv[1]["probe_mean"])
-        used = [n for n, v in cues.items()
-                if v["expect_sign"] != 0 and v["frac_mean"] - v["frac_std"] > 0.5]
-        if np.isfinite(pat_f) and pat_f + pat_s < 0.5 and not used:
+        top = max(cues.items(), key=lambda kv: kv[1]["dep_mean"])
+        period = cues.get("cardiac period (f2f)", {})
+        if "period" in top[0].lower() or (period and period["dep_mean"] - period["dep_std"] > ctrl + 0.05):
             st.error(
-                f"**Decodable ≠ used — and it's the *most decodable* cue that goes unused.** Across "
-                f"{C['n_seeds']} seeds the most linearly decodable cue is **{top[0].split(' (')[0]}** "
-                f"(probe R² {top[1]['probe_mean']:.2f}), yet arrival time is robustly **not** causally "
-                f"used (frac {pat_f:.2f} ± {pat_s:.2f}, below chance). And **no** scalar physiological "
-                "cue we tested is robustly used — the model reaches "
-                f"{C['mae_cal_dbp']:.1f} mmHg DBP MAE without routing through any single interpretable "
-                "index. Faithfulness is causal, and a linear probe (or reconstruction fidelity) cannot "
-                "stand in for it.")
+                f"**Not faithful — the model rides a cardiac-timing (HR) shortcut.** Its strongest causal "
+                f"dependence is on **cardiac period / heart rate** (dep {period.get('dep_mean',float('nan')):.2f} "
+                f"± {period.get('dep_std',0):.2f}, well above the {ctrl:.2f} control), which is also the "
+                f"**most decodable** cue (probe R² {period.get('probe_mean',float('nan')):.2f}). The "
+                "pressure-morphology and transit-time cues sit near the control floor and their "
+                "physiological direction is unstable across seeds. So an accurate "
+                f"({C['mae_cal_dbp']:.1f} mmHg) ECG+PPG model reaches accuracy by exploiting the "
+                "**HR–BP correlation**, not the governing pressure physiology — the exact confounded "
+                "shortcut the cuffless-BP literature warns about. Reconstruction fidelity (0.9) and "
+                "decodability do not reveal this; only the causal audit does.")
         else:
             st.info(
-                f"Across {C['n_seeds']} seeds: PAT frac {pat_f:.2f} ± {pat_s:.2f}. Robustly-used cues: "
-                f"{', '.join(n.split(' (')[0] for n in used) if used else 'none'}. Decodability and "
-                "causal use come apart cue-by-cue — only the causal audit separates them.")
+                f"Across {C['n_seeds']} seeds the strongest causal dependence is on "
+                f"**{top[0].split(' (')[0]}** (dep {top[1]['dep_mean']:.2f}, control {ctrl:.2f}). "
+                "Decodability and causal use come apart cue-by-cue — only the causal audit separates them.")

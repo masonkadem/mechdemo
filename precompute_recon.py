@@ -18,7 +18,7 @@ import json, os, numpy as np, torch, torch.nn as nn
 import mechlib
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-LAM, EPOCHS, SEEDS = 1.0, 60, [0, 1, 2]
+LAM, EPOCHS, SEEDS = 1.0, 30, [0, 1, 2]
 ECG, PPG, ABP = mechlib.ECG, mechlib.PPG, mechlib.ABP
 CUE_CACHE = "data/_cue_cache.npz"
 
@@ -39,7 +39,7 @@ Atr, Ate = stdz_wave(d["Xtr"][:, :, ABP]), stdz_wave(d["Xte"][:, :, ABP])
 def load_or_compute_cues():
     """Cue extraction is the slow part (savgol + peak-finding over every segment). Cache it
     so a container restart never re-pays it."""
-    keys = ["pat", "rise", "aix", "apg", "hr", "amp"]
+    keys = ["pat", "rise", "aix", "apg", "hr", "period", "amp"]
     if os.path.exists(CUE_CACHE):
         z = np.load(CUE_CACHE)
         return ({k: z[f"s_{k}"] for k in keys}, {k: z[f"a_{k}"] for k in ["rise", "aix", "apg"]})
@@ -129,8 +129,10 @@ cues = {}
 for n in names:
     fr = np.array([p[n]["frac_correct"] for p in per_seed])
     pr = np.array([p[n]["probe_r2"] for p in per_seed])
+    dp = np.array([p[n]["dependence"] for p in per_seed])
     cues[n] = {"frac_mean": float(fr.mean()), "frac_std": float(fr.std()),
-               "probe_mean": float(pr.mean()), "expect_sign": per_seed[0][n]["expect_sign"]}
+               "probe_mean": float(pr.mean()), "dep_mean": float(dp.mean()), "dep_std": float(dp.std()),
+               "expect_sign": per_seed[0][n]["expect_sign"]}
 
 cue_val = {}
 for cue in ["rise", "aix", "apg"]:
