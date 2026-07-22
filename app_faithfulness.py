@@ -187,24 +187,30 @@ with tab_syn:
 
 # ── REAL WAVEFORMS ────────────────────────────────────────────────────────────
 with tab_real:
+    DEFAULT_CKPT = os.path.join(DATA, "dbp_transformer.pt")
     st.markdown(
-        "Upload a checkpoint saved by `notebooks/real_transformer_shortcut_walkthrough.ipynb` "
-        "(its save cell writes `{state_dict, history, config}` in exactly this format) to run the "
-        "probe-then-patch audit live, on a model you actually trained."
+        "Live probe-then-patch audit on a trained `WaveTransformer` (see "
+        "`notebooks/real_transformer_shortcut_walkthrough.ipynb`, whose save cell writes this exact "
+        "`{state_dict, history, config}` bundle). Runs on the bundled example model below by default — "
+        "upload your own checkpoint from the notebook to swap it in."
     )
-    up = st.file_uploader("Trained model (.pt)", type=["pt"])
+    up = st.file_uploader("Upload your own checkpoint (.pt) — optional", type=["pt"])
+    ckpt_src = up if up is not None else (DEFAULT_CKPT if os.path.exists(DEFAULT_CKPT) else None)
 
-    if up is None:
-        st.info("No checkpoint uploaded yet.")
+    if ckpt_src is None:
+        st.warning("No bundled example checkpoint found and nothing uploaded — nothing to show.")
     else:
         try:
-            ckpt = torch.load(up, map_location="cpu", weights_only=False)
+            ckpt = torch.load(ckpt_src, map_location="cpu", weights_only=False)
             cfg, hist, sd = ckpt["config"], ckpt["history"], ckpt["state_dict"]
             net = mechlib.WaveTransformer(**cfg)
             net.load_state_dict(sd); net.eval()
         except Exception as e:
             st.error(f"Couldn't load that checkpoint: {e}")
             st.stop()
+
+        if up is None:
+            st.caption("Showing the bundled example model — upload your own above to replace it.")
 
         Xte, yte, fs = real_test_split()
         dbp = yte[:, 1]
