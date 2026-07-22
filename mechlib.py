@@ -8,12 +8,40 @@ Verified channel identities in the cached data:  ECG = 0, PPG = 1, ABP = 2.
 """
 import numpy as np
 import torch
+import torch.nn as nn
 from scipy.signal import find_peaks, savgol_filter
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import r2_score
 
 ECG, PPG, ABP = 0, 1, 2
+
+
+# ----------------------------------------------------------------- model
+class WaveTransformer(nn.Module):
+    """Patchify -> TransformerEncoder -> mean-pool -> linear head, for a single scalar
+    regression target (e.g. DBP). Shared by the real-data walkthrough notebook and the
+    Streamlit demo so the architecture used to train a checkpoint can never drift from the
+    architecture used to load it -- reconstruct with `WaveTransformer(**checkpoint["config"])`.
+    """
+    def __init__(self, n_ch=2, dm=64, patch=25, heads=4, depth=3, L=1250):
+        super().__init__()
+        self.cfg = dict(n_ch=n_ch, dm=dm, patch=patch, heads=heads, depth=depth, L=L)
+        n_tok = L // patch
+        self.embed = nn.Conv1d(n_ch, dm, patch, patch)                # (B,C,L) -> (B,dm,n_tok)
+        self.pos = nn.Parameter(torch.randn(1, n_tok, dm) * 0.02)
+        self.tr = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(dm, heads, dm * 2, batch_first=True), depth)
+        self.head = nn.Linear(dm, 1)
+
+    def forward(self, x, return_acts=False):
+        t = self.embed(x.transpose(1, 2)).transpose(1, 2) + self.pos    # (B, n_tok, dm) patch embed
+        acts = [t]
+        for layer in self.tr.layers:
+            t = layer(t)
+            acts.append(t)                                             # one entry per transformer block
+        y = self.head(t.mean(1)).squeeze(-1)
+        return (y, acts) if return_acts else y
 
 
 # ----------------------------------------------------------------- data
@@ -104,6 +132,22 @@ def causal_ptt_audit(model, X, fs, device, ppg_pos=PPG, deltas=(-6, -4, -2, 0, 2
             "curve": preds[:, :, k].mean(0).tolist(),
         }
     return out
+
+
+def input_shift_audit(predict_fn, X, fs, ppg_pos=PPG, deltas=(-8, -6, -4, -2, 0, 2, 4, 6, 8)):
+    """INPUT-space causal test for a single scalar-output model: np.roll the PPG channel by
+    +/- delta samples -- a real change to arrival time, not an activation edit -- and watch how
+    the output responds. Faithful PAT/PTT-use = NEGATIVE slope (later PPG = longer arrival time
+    = lower predicted BP). `predict_fn`: (N, L, C) ndarray -> (N,) ndarray of scalar predictions.
+    Returns (shift_ms, mean_response_curve, slope_mmHg_per_ms)."""
+    dt_ms = np.array(deltas) / fs * 1000
+    curve = []
+    for delta in deltas:
+        Xd = X.copy()
+        Xd[:, :, ppg_pos] = np.roll(X[:, :, ppg_pos], int(delta), axis=1)
+        curve.append(float(np.mean(predict_fn(Xd))))
+    slope = float(np.polyfit(dt_ms, curve, 1)[0])
+    return dt_ms, np.array(curve), slope
 
 
 def probe_direction(feats, target):

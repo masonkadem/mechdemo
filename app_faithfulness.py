@@ -4,6 +4,7 @@ import numpy as np
 import torch, torch.nn as nn
 import matplotlib.pyplot as plt
 import streamlit as st
+from scipy.signal import find_peaks
 from sklearn.linear_model import Ridge
 from sklearn.metrics import r2_score
 
@@ -82,15 +83,6 @@ def train_grid():
 
 
 @st.cache_data
-def load_real(proto):
-    j = os.path.join(DATA, f"realdata_{proto}.json")
-    n = os.path.join(DATA, f"realdata_{proto}.npz")
-    if not (os.path.exists(j) and os.path.exists(n)):
-        return None, None
-    return json.load(open(j)), dict(np.load(n))
-
-
-@st.cache_data
 def load_capstone():
     j = os.path.join(DATA, "capstone.json"); n = os.path.join(DATA, "capstone.npz")
     if not (os.path.exists(j) and os.path.exists(n)):
@@ -99,13 +91,30 @@ def load_capstone():
 
 
 @st.cache_data
-def ptt_scatter():
-    """PTT vs BP from mini test set — loaded once, cached."""
+def real_test_split():
+    """Normalized ECG+PPG test segments + labels + fs from the VitalDB mini split."""
     d = mechlib.load_mini(os.path.join(DATA, "vitaldb_mini.npz"))
     Xte = mechlib.normalize(d["Xte"][:, :, [mechlib.ECG, mechlib.PPG]])
-    ptt = mechlib.compute_ptt(Xte, d["fs"], ecg_pos=0, ppg_pos=1)
-    m = np.isfinite(ptt)
-    return ptt[m] * 1000, d["yte"][m, 0], d["yte"][m, 1]  # PTT ms, SBP, DBP
+    return Xte, d["yte"], int(d["fs"])
+
+
+@st.cache_data
+def real_scalars(_Xte, fs):
+    """PAT / cardiac-period / morphology cues straight off the raw signal — cached, since
+    compute_scalars loops per segment and doesn't depend on which model was uploaded."""
+    return mechlib.compute_scalars(_Xte, fs, mechlib.ECG, mechlib.PPG)
+
+
+@torch.no_grad()
+def real_layer_features(net, X, depth, bs=512):
+    outs = None
+    for s in range(0, len(X), bs):
+        xb = torch.tensor(X[s:s + bs], dtype=torch.float32)
+        _, acts = net(xb, return_acts=True)
+        pooled = [a.mean(1).numpy() for a in acts]        # mean-pool tokens -> (n, dm) per layer
+        outs = pooled if outs is None else [np.concatenate([o, p]) for o, p in zip(outs, pooled)]
+    names = ["patch embed"] + [f"layer {i + 1}" for i in range(depth)]
+    return dict(zip(names, outs))
 
 
 # ── UI ───────────────────────────────────────────────────────────────────────
@@ -178,55 +187,118 @@ with tab_syn:
 
 # ── REAL WAVEFORMS ────────────────────────────────────────────────────────────
 with tab_real:
-    proto = st.radio("VitalDB subset", ["cal_free", "cal_based"], horizontal=True,
-                     help="cal_based applies per-subject mean offset to anchor absolute BP.")
-    R, A = load_real(proto)
-    if R is None:
-        st.warning("Precomputed real-data files not found. Run the precompute step.")
-    else:
-        m = st.columns(5)
-        m[0].metric("Baseline MAE", f"{R['baseline_mae_sbp']:.1f}", help="predict-the-mean")
-        m[1].metric("Raw model MAE", f"{R['test_mae_sbp']:.1f}")
-        m[2].metric("+ calibration MAE", f"{R['cal_mae_sbp']:.1f}",
-                    f"{R['cal_mae_sbp'] - R['test_mae_sbp']:+.1f}", delta_color="inverse")
-        m[3].metric("PTT decodable (probe R²)", f"{R['probe_ptt_r2']:.2f}",
-                    f"shuffled {R['probe_ptt_shuffled_r2']:+.2f}")
-        m[4].metric("Causal PTT use (frac)", f"{R['frac_correct_sign']:.2f}",
-                    help="share of segments where longer PTT → lower BP; 0.5 = chance")
+    st.markdown(
+        "Upload a checkpoint saved by `notebooks/real_transformer_shortcut_walkthrough.ipynb` "
+        "(its save cell writes `{state_dict, history, config}` in exactly this format) to run the "
+        "probe-then-patch audit live, on a model you actually trained."
+    )
+    up = st.file_uploader("Trained model (.pt)", type=["pt"])
 
-        g = st.columns(2)
-        with g[0]:
-            st.caption("Causal audit — BP vs imposed PTT shift (faithful = down)")
-            fig, ax = plt.subplots(figsize=(4.4, 2.8))
-            ax.plot(A["curve_shift_ms"], A["curve_sbp"], "-o", ms=3, color=NAVY, label="SBP")
-            ax.plot(A["curve_shift_ms"], A["curve_dbp"], "-o", ms=3, color=RED, label="DBP")
-            ax.set_xlabel("imposed PTT shift (ms)"); ax.set_ylabel("predicted BP (mmHg)")
-            ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
-        with g[1]:
-            st.caption("PTT vs BP — the transit law is weak here")
-            try:
-                ptt_ms, sbp, dbp = ptt_scatter()
-                rr = float(np.corrcoef(ptt_ms, dbp)[0, 1])
-                fig, ax = plt.subplots(figsize=(4.4, 2.8))
-                ax.scatter(ptt_ms, dbp, s=3, alpha=.2, color=RED, edgecolor="none")
-                xs = np.array([ptt_ms.min(), ptt_ms.max()])
-                ax.plot(xs, np.polyfit(ptt_ms, dbp, 1) @ np.vstack([xs, np.ones(2)]),
-                        color="k", lw=1)
-                ax.set_xlabel("measured PTT (ms)"); ax.set_ylabel("DBP (mmHg)")
-                ax.set_title(f"r = {rr:+.3f}", fontsize=9)
-                fig.tight_layout(); st.pyplot(fig)
-            except Exception as e:
-                st.caption(f"unavailable: {e}")
+    if up is None:
+        st.info("No checkpoint uploaded yet.")
+    else:
+        try:
+            ckpt = torch.load(up, map_location="cpu", weights_only=False)
+            cfg, hist, sd = ckpt["config"], ckpt["history"], ckpt["state_dict"]
+            net = mechlib.WaveTransformer(**cfg)
+            net.load_state_dict(sd); net.eval()
+        except Exception as e:
+            st.error(f"Couldn't load that checkpoint: {e}")
+            st.stop()
+
+        Xte, yte, fs = real_test_split()
+        dbp = yte[:, 1]
+        t_axis = np.arange(Xte.shape[1]) / fs
+
+        st.caption("Example segment — the z-scored ECG/PPG the model actually sees")
+        fig, ax = plt.subplots(figsize=(6.5, 2))
+        ax.plot(t_axis, Xte[0, :, 0], color=NAVY, lw=1, label="ECG")
+        ax.plot(t_axis, Xte[0, :, 1], color=RED, lw=1, label="PPG")
+        ax.set_xlabel("time (s)"); ax.set_title(f"DBP = {dbp[0]:.0f} mmHg", fontsize=9)
+        ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
+
+        with torch.no_grad():
+            pred = net(torch.tensor(Xte, dtype=torch.float32)).numpy()
+        mae = float(np.abs(pred - dbp).mean())
+        base = float(np.abs(dbp.mean() - dbp).mean())
+        m = st.columns(4)
+        m[0].metric("Layers", cfg["depth"])
+        m[1].metric("Attention heads", cfg["heads"])
+        m[2].metric("Test DBP MAE (mmHg)", f"{mae:.1f}")
+        m[3].metric("vs. predict-the-mean", f"{base:.1f}", f"{mae - base:+.1f}", delta_color="inverse")
+        if mae > base - 0.5:
+            st.warning("MAE is barely below the predict-the-mean baseline — treat everything below "
+                       "as a methodology demo, not a trustworthy faithfulness verdict, until this model "
+                       "is trained further.")
+
+        st.caption("Training convergence")
+        fig, ax = plt.subplots(figsize=(5.5, 2.8))
+        ax.plot(hist["train_mae"], color=NAVY, lw=1.4, label="train MAE")
+        ax.plot(hist["val_mae"], color=RED, lw=1.4, ls="--", label="val MAE")
+        ax.set_xlabel("epoch"); ax.set_ylabel("MAE (mmHg)")
+        ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
+
+        scalars = real_scalars(Xte, fs)
+        stages = real_layer_features(net, Xte, cfg["depth"])
+        r2_pat = [mechlib.linear_probe(f, scalars["pat"]) for f in stages.values()]
+        r2_per = [mechlib.linear_probe(f, scalars["period"]) for f in stages.values()]
+
+        st.caption("Linear-probe decodability by layer")
+        fig, ax = plt.subplots(figsize=(5.5, 3))
+        ax.plot(list(stages), r2_pat, "-o", ms=4, color=NAVY, label="PAT (arrival time)")
+        ax.plot(list(stages), r2_per, "-o", ms=4, color=RED, label="cardiac period (f2f)")
+        ax.axhline(0, color="#bbb", lw=.8)
+        ax.set_ylabel("probe R²"); ax.legend(fontsize=7, frameon=False)
+        plt.setp(ax.get_xticklabels(), rotation=15, ha="right")
+        fig.tight_layout(); st.pyplot(fig)
+
+        st.caption("Sanity check — do the PAT / cardiac-period fiducials land where they should?")
+        ex = 0
+        ez = (Xte[ex, :, 0] - Xte[ex, :, 0].mean()) / (Xte[ex, :, 0].std() + 1e-8)
+        pz = (Xte[ex, :, 1] - Xte[ex, :, 1].mean()) / (Xte[ex, :, 1].std() + 1e-8)
+        r_peaks, _ = find_peaks(ez, distance=max(int(0.3 * fs), 1), prominence=0.5)
+        feet = []
+        for rp in r_peaks:
+            lo, hi = rp + max(int(0.05 * fs), 1), min(rp + int(0.5 * fs), len(pz))
+            if lo < hi:
+                feet.append(lo + int(np.argmin(pz[lo:hi])))
+        fig, ax = plt.subplots(figsize=(6.5, 2.2))
+        ax.plot(t_axis, Xte[ex, :, 0], color=NAVY, lw=1, label="ECG")
+        ax.plot(t_axis, Xte[ex, :, 1], color=RED, lw=1, label="PPG")
+        ax.scatter(r_peaks / fs, Xte[ex, r_peaks, 0], color=NAVY, marker="^", zorder=5, label="R-peak")
+        if feet:
+            ax.scatter(np.array(feet) / fs, Xte[ex, feet, 1], color=RED, marker="v", zorder=5,
+                      label="PPG foot")
+        ax.legend(fontsize=7, frameon=False, ncol=4); fig.tight_layout(); st.pyplot(fig)
+        st.caption(
+            "PAT = ECG R-peak -> next PPG-foot delay (^ / v markers above, textbook PAT definition). "
+            "Cardiac period = median foot-to-foot PPG interval. Population medians: "
+            f"PAT {np.nanmedian(scalars['pat']) * 1000:.0f} ms, "
+            f"period {np.nanmedian(scalars['period']):.2f} s "
+            f"({60 / np.nanmedian(scalars['period']):.0f} bpm) — both land in the physiologically "
+            "expected range, which is the check that matters here, not any single segment."
+        )
+
+        st.caption("Causal test — np.roll the PPG channel in time (a real arrival-time shift), "
+                   "watch predicted DBP")
+
+        @torch.no_grad()
+        def predict_fn(Xd):
+            return net(torch.tensor(Xd, dtype=torch.float32)).numpy()
+
+        shift_ms, curve, slope = mechlib.input_shift_audit(predict_fn, Xte, fs)
+        fig, ax = plt.subplots(figsize=(5.5, 2.8))
+        ax.plot(shift_ms, curve, "-o", ms=4, color=NAVY)
+        ax.set_xlabel("imposed PPG shift (ms)"); ax.set_ylabel("predicted DBP (mmHg)")
+        ax.set_title(f"slope = {slope:+.3f} mmHg/ms  (faithful = negative)", fontsize=9)
+        fig.tight_layout(); st.pyplot(fig)
 
         st.caption(
-            f"Calibration reaches {R['cal_mae_sbp']:.1f} mmHg SBP MAE — genuinely accurate — and "
-            f"PTT is weakly decodable (R² {R['probe_ptt_r2']:.2f}). Yet the causal audit shows the "
-            f"model does not use it: only {R['frac_correct_sign']*100:.0f}% of segments respond in "
-            "the physiological direction. The interval from ECG→PPG is really pulse *arrival* time "
-            "(PAT = pre-ejection period + transit); PEP moves independently of BP, so the PTT→BP law "
-            "is weak and can invert (right panel). **These models are not faithful to the governing "
-            "pressure physiology** — as the next tab shows, their accuracy comes from a cardiac-timing "
-            "(HR) shortcut, not transit time. Accurate ≠ faithful."
+            "This is an INPUT-space intervention — the PPG channel itself is shifted in time, a real "
+            "change to arrival time, not an edit inside the model's activations (that's the "
+            "activation-space causal patch in the notebook / the *Faithful to what?* tab). A negative "
+            "slope means the model responds the way arrival-time physiology predicts; flat or positive "
+            "means it doesn't — regardless of how decodable PAT looked in the probe sweep above."
         )
 
 # ── FAITHFUL TO WHAT? ─────────────────────────────────────────────────────────
