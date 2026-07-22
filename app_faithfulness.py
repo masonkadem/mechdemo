@@ -189,10 +189,9 @@ with tab_syn:
 with tab_real:
     DEFAULT_CKPT = os.path.join(DATA, "dbp_transformer.pt")
     st.markdown(
-        "Live probe-then-patch audit on a trained `WaveTransformer` (see "
-        "`notebooks/real_transformer_shortcut_walkthrough.ipynb`, whose save cell writes this exact "
-        "`{state_dict, history, config}` bundle). Runs on the bundled example model below by default — "
-        "upload your own checkpoint from the notebook to swap it in."
+        "Probe-then-patch audit on a trained `WaveTransformer` (see "
+        "`notebooks/real_transformer_shortcut_walkthrough.ipynb`). Runs on a bundled example model — "
+        "upload your own `.pt` checkpoint to swap it in."
     )
     up = st.file_uploader("Upload your own checkpoint (.pt) — optional", type=["pt"])
     ckpt_src = up if up is not None else (DEFAULT_CKPT if os.path.exists(DEFAULT_CKPT) else None)
@@ -232,10 +231,6 @@ with tab_real:
         m[1].metric("Attention heads", cfg["heads"])
         m[2].metric("Test DBP MAE (mmHg)", f"{mae:.1f}")
         m[3].metric("vs. predict-the-mean", f"{base:.1f}", f"{mae - base:+.1f}", delta_color="inverse")
-        if mae > base - 0.5:
-            st.warning("MAE is barely below the predict-the-mean baseline — treat everything below "
-                       "as a methodology demo, not a trustworthy faithfulness verdict, until this model "
-                       "is trained further.")
 
         st.caption("Training convergence")
         fig, ax = plt.subplots(figsize=(5.5, 2.8))
@@ -277,16 +272,12 @@ with tab_real:
                       label="PPG foot")
         ax.legend(fontsize=7, frameon=False, ncol=4); fig.tight_layout(); st.pyplot(fig)
         st.caption(
-            "PAT = ECG R-peak -> next PPG-foot delay (^ / v markers above, textbook PAT definition). "
-            "Cardiac period = median foot-to-foot PPG interval. Population medians: "
-            f"PAT {np.nanmedian(scalars['pat']) * 1000:.0f} ms, "
-            f"period {np.nanmedian(scalars['period']):.2f} s "
-            f"({60 / np.nanmedian(scalars['period']):.0f} bpm) — both land in the physiologically "
-            "expected range, which is the check that matters here, not any single segment."
+            f"PAT (^→v) median {np.nanmedian(scalars['pat']) * 1000:.0f} ms · "
+            f"cardiac period median {np.nanmedian(scalars['period']):.2f} s "
+            f"({60 / np.nanmedian(scalars['period']):.0f} bpm) — both physiological."
         )
 
-        st.caption("Causal test — np.roll the PPG channel in time (a real arrival-time shift), "
-                   "watch predicted DBP")
+        st.caption("Causal test — shift the PPG channel in time, watch predicted DBP")
 
         @torch.no_grad()
         def predict_fn(Xd):
@@ -299,13 +290,8 @@ with tab_real:
         ax.set_title(f"slope = {slope:+.3f} mmHg/ms  (faithful = negative)", fontsize=9)
         fig.tight_layout(); st.pyplot(fig)
 
-        st.caption(
-            "This is an INPUT-space intervention — the PPG channel itself is shifted in time, a real "
-            "change to arrival time, not an edit inside the model's activations (that's the "
-            "activation-space causal patch in the notebook / the *Faithful to what?* tab). A negative "
-            "slope means the model responds the way arrival-time physiology predicts; flat or positive "
-            "means it doesn't — regardless of how decodable PAT looked in the probe sweep above."
-        )
+        st.caption("Input-space intervention: negative slope = the model uses arrival time; "
+                   "flat/positive = it doesn't, however decodable PAT looked above.")
 
 # ── FAITHFUL TO WHAT? ─────────────────────────────────────────────────────────
 with tab_cap:
@@ -344,6 +330,54 @@ with tab_cap:
             ax.set_xlim(0, 5); ax.set_xlabel("time (s)"); ax.set_ylabel("ABP (norm.)")
             ax.legend(fontsize=7, frameon=False); fig.tight_layout(); st.pyplot(fig)
 
+        if "ex_ecg" in CV:
+            exfs = float(CV["ex_fs"]); WMAX = 4.5               # seconds shown (a few clean beats)
+            te = np.arange(len(CV["ex_ecg"])) / exfs
+            r, ft = CV["ex_r_peaks"].astype(int), CV["ex_feet"].astype(int)
+            sp, nt = CV["ex_sys_peaks"].astype(int), CV["ex_notches"].astype(int)
+            m = te <= WMAX
+            rw = r[te[r] <= WMAX]; fw = ft[te[ft] <= WMAX]
+            sw = sp[te[sp] <= WMAX]; nw = nt[te[nt] <= WMAX]
+            st.caption("Cue sanity check — the fiducials the PAT & morphology cues are built from")
+            fig, (a0, a1) = plt.subplots(2, 1, figsize=(9.5, 3.4), sharex=True,
+                                         gridspec_kw=dict(height_ratios=[1, 1.3], hspace=0.12))
+            a0.plot(te[m], CV["ex_ecg"][m], color=NAVY, lw=1)
+            a0.scatter(rw / exfs, CV["ex_ecg"][rw], color=NAVY, marker="^", s=45, zorder=5,
+                       label="ECG R-peak")
+            a1.plot(te[m], CV["ex_ppg"][m], color=RED, lw=1.2)
+            a1.scatter(fw / exfs, CV["ex_ppg"][fw], color=RED, marker="v", s=48, zorder=5,
+                       label="PPG foot (tangent)")
+            a1.scatter(sw / exfs, CV["ex_ppg"][sw], facecolors="none", edgecolors="#7a2f20",
+                       marker="o", s=46, lw=1.3, zorder=5, label="systolic peak")
+            if len(nw):
+                a1.scatter(nw / exfs, CV["ex_ppg"][nw], color=GREY, marker="s", s=30, zorder=5,
+                           label="dicrotic notch")
+            a0.set_ylabel("ECG", fontsize=8); a1.set_ylabel("PPG", fontsize=8)
+            for a in (a0, a1):
+                a.set_yticks([]); a.legend(fontsize=7, frameon=False, loc="upper right", ncol=1)
+            # PAT bracket on a clean mid-figure beat: guide lines R-peak -> foot across both panels
+            if len(rw) >= 2 and len(fw):
+                r0 = rw[1]; f0 = fw[(fw > r0) & (fw < r0 + int(0.5 * exfs))]
+                if len(f0):
+                    f0 = f0[0]
+                    a0.axvline(r0 / exfs, color="k", ls=":", lw=0.9, zorder=1)
+                    a1.axvline(r0 / exfs, color="k", ls=":", lw=0.9, zorder=1)
+                    a1.axvline(f0 / exfs, color="k", ls=":", lw=0.9, zorder=1)
+                    yb = CV["ex_ppg"][m].min()
+                    a1.annotate("", xy=(f0 / exfs, yb), xytext=(r0 / exfs, yb),
+                                arrowprops=dict(arrowstyle="<->", color="k", lw=1.1))
+                    a1.text((r0 + f0) / 2 / exfs, yb, f"  PAT {(f0-r0)/exfs*1000:.0f} ms",
+                            ha="center", va="bottom", fontsize=8)
+            a1.set_xlabel("time (s)"); a1.set_xlim(0, WMAX)
+            fig.tight_layout(); st.pyplot(fig)
+            ppat = C["cues"]["PAT (arrival time)"]
+            st.caption(
+                f"PAT = ECG R-peak → intersecting-tangent PPG foot (dotted guides). Example median "
+                f"{np.median(CV['ex_pat_ms']):.0f} ms; the foot / systolic-peak / dicrotic-notch "
+                f"fiducials also feed the rise, PPG-peak, decay and notch cues above. Illustrative single "
+                f"segment — the battery uses every test segment (PAT probe R² {ppat['probe_mean']:.2f}, "
+                f"dependence {ppat['dep_mean']:.2f}).")
+
         st.markdown("**Decodable ≠ used** — every cue: how decodable vs how much the output uses it:")
         rows = sorted(cues.items(), key=lambda kv: -kv[1]["dep_mean"])
         md = ("| cue | decodable (probe R²) | causal dependence | physiological direction (frac) |\n"
@@ -354,7 +388,9 @@ with tab_cap:
                    f"{flag} | {val['frac_mean']:.2f} |\n")
         st.markdown(md)
         st.caption("Shape cues validate vs ground-truth ABP: "
-                   + ", ".join(f"{k} r={cval[k]:+.2f}" for k in ["rise", "aix", "apg"] if k in cval)
+                   + ", ".join(f"{k} r={cval[k]:+.2f}"
+                               for k in ["rise", "aix", "apg", "kurt", "notch", "decay", "peak"]
+                               if k in cval and np.isfinite(cval[k]))
                    + ". *Dependence* = does the output move with the cue (any direction); *physiological "
                      "direction* = does it move the physiologically correct way (0.5 = chance).")
 

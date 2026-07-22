@@ -11,3 +11,5 @@ subset_cache.npz
 scratch_*.py
 *.png
 data/_cue_cache.npz
+data/_cue_cache_deep.npz
+data/vitaldb_mini_deep.npz

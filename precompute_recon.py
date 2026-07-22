@@ -20,9 +20,9 @@ import mechlib
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 LAM, EPOCHS, SEEDS = 1.0, 30, [0, 1, 2]
 ECG, PPG, ABP = mechlib.ECG, mechlib.PPG, mechlib.ABP
-CUE_CACHE = "data/_cue_cache.npz"
+CUE_CACHE = "data/_cue_cache_deep.npz"          # v2: mini_deep + tangent-foot PAT + extra morphology
 
-d = mechlib.load_mini("data/vitaldb_mini.npz"); fs = int(d["fs"])
+d = mechlib.load_mini("data/vitaldb_mini_deep.npz"); fs = int(d["fs"])
 Xtr = mechlib.normalize(d["Xtr"][:, :, [ECG, PPG]]); ytr = d["ytr"]
 Xte = mechlib.normalize(d["Xte"][:, :, [ECG, PPG]]); yte = d["yte"]; gte = d["gte"]
 L = Xtr.shape[1]
@@ -36,22 +36,39 @@ def stdz_wave(w):
 Atr, Ate = stdz_wave(d["Xtr"][:, :, ABP]), stdz_wave(d["Xte"][:, :, ABP])
 
 
+SCALAR_KEYS = ["pat", "rise", "aix", "apg", "kurt", "notch", "decay", "peak", "hr", "period", "amp"]
+ABP_KEYS = mechlib.MORPH_KEYS   # shape cues we can also read off the ground-truth ABP wave
+
+
 def load_or_compute_cues():
     """Cue extraction is the slow part (savgol + peak-finding over every segment). Cache it
     so a container restart never re-pays it."""
-    keys = ["pat", "rise", "aix", "apg", "hr", "period", "amp"]
     if os.path.exists(CUE_CACHE):
         z = np.load(CUE_CACHE)
-        return ({k: z[f"s_{k}"] for k in keys}, {k: z[f"a_{k}"] for k in ["rise", "aix", "apg"]})
+        return ({k: z[f"s_{k}"] for k in SCALAR_KEYS}, {k: z[f"a_{k}"] for k in ABP_KEYS})
     print("computing cues (PPG) + ground-truth morphology (ABP) [one-time cache] ...", flush=True)
     sc = mechlib.compute_scalars(d["Xte"][:, :, [ECG, PPG]], fs, 0, 1)
     ab = mechlib.compute_morphology(d["Xte"], fs, ABP)
-    np.savez_compressed(CUE_CACHE, **{f"s_{k}": sc[k] for k in keys},
-                        **{f"a_{k}": ab[k] for k in ["rise", "aix", "apg"]})
+    np.savez_compressed(CUE_CACHE, **{f"s_{k}": sc[k] for k in SCALAR_KEYS},
+                        **{f"a_{k}": ab[k] for k in ABP_KEYS})
     return sc, ab
 
 
 scalars_te, morph_abp = load_or_compute_cues()
+
+# pick a clean, legible example segment for the Tab-3 cue-sanity overlay: well-separated beats
+# (moderate count -> readable) with clearly visible dicrotic notches, and a physiological PAT.
+_fids = [mechlib.segment_fiducials(Xte[i, :, 0], Xte[i, :, 1], fs) for i in range(min(600, len(Xte)))]
+_cand = [i for i, f in enumerate(_fids)
+         if 7 <= len(f["feet"]) <= 12                          # ~45-75 bpm over the 10 s window
+         and len(f["notches"]) >= max(len(f["feet"]) - 2, 3)   # notch found on ~every beat
+         and len(f["pat_ms"]) and 180 <= np.median(f["pat_ms"]) <= 340]
+EX = max(_cand, key=lambda i: len(_fids[i]["notches"])) if _cand else \
+    int(np.argmax([len(f["notches"]) for f in _fids]))
+exf = _fids[EX]
+print(f"example segment for sanity overlay: idx {EX}  "
+      f"({len(exf['feet'])} feet, {len(exf['notches'])} notches, PAT {np.median(exf['pat_ms']):.0f} ms)",
+      flush=True)
 
 
 class ReconCNN(nn.Module):
@@ -121,7 +138,8 @@ for sd in SEEDS:
           flush=True)
     if sd == SEEDS[-1]:
         with torch.no_grad():
-            overlay = (Ate[0], net.reconstruct(torch.tensor(Xte[:1], device=device)).cpu().numpy()[0])
+            rc_ex = net.reconstruct(torch.tensor(Xte[EX:EX + 1], device=device)).cpu().numpy()[0]
+        overlay = (Ate[EX], rc_ex)
 
 # aggregate across seeds
 names = list(per_seed[0].keys())
@@ -135,7 +153,7 @@ for n in names:
                "expect_sign": per_seed[0][n]["expect_sign"]}
 
 cue_val = {}
-for cue in ["rise", "aix", "apg"]:
+for cue in ABP_KEYS:                              # validate every PPG shape cue vs the ABP wave
     p, a = scalars_te[cue], morph_abp[cue]; mm = np.isfinite(p) & np.isfinite(a)
     cue_val[cue] = float(np.corrcoef(p[mm], a[mm])[0, 1]) if mm.sum() > 10 else float("nan")
 
@@ -143,6 +161,9 @@ res = {"lambda": LAM, "n_seeds": len(SEEDS), "recon_corr": float(np.mean(recon_c
        "mae_cal_dbp": float(np.mean(maes)), "cues": cues, "cue_validation": cue_val}
 json.dump(res, open("data/capstone.json", "w"), indent=2)
 np.savez_compressed("data/capstone.npz",
-    t=np.arange(L) / fs, abp_true=overlay[0], abp_recon=overlay[1])
+    t=np.arange(L) / fs, abp_true=overlay[0], abp_recon=overlay[1],
+    ex_ecg=Xte[EX, :, 0], ex_ppg=Xte[EX, :, 1], ex_fs=fs,
+    ex_r_peaks=exf["r_peaks"], ex_feet=exf["feet"], ex_sys_peaks=exf["sys_peaks"],
+    ex_notches=exf["notches"], ex_pat_ms=exf["pat_ms"])
 print("cue validation (PPG vs ABP):", {k: round(v, 2) for k, v in cue_val.items()}, flush=True)
 print("wrote data/capstone.json + .npz", flush=True); print("DONE", flush=True)
