@@ -149,16 +149,29 @@ with tab_syn:
     m = st.columns(3)
     m[0].metric("Accuracy (R²)", f"{s['acc']:.2f}")
     m[1].metric("Linear probe (R²)", f"{s['lin']:.2f}")
-    m[2].metric("Roll audit (mmHg/ms)", f"{slope:+.2f}")
+    m[2].metric("Roll audit slope (mmHg/ms)", f"{slope:+.2f}",
+                help="De-normalized from z-score units (BP SD ≈ 17.3 mmHg). "
+                     "Faithful models show a negative slope (longer PTT → lower BP).")
 
     if slope < -0.20:
-        st.success(f"Faithful — roll audit {slope:+.2f} mmHg/ms: longer arrival time lowers BP, "
-                   "the model uses arrival-time physics.")
+        st.success(
+            f"**Faithful** — roll audit slope {slope:+.2f} mmHg/ms: predicted BP falls as arrival "
+            "time lengthens, consistent with the physics law.  The curve noses **left** (negative "
+            "slope), confirming the model uses arrival-time information."
+        )
     elif slope < -0.08:
-        st.warning(f"Partial — roll audit {slope:+.2f} mmHg/ms: arrival time weakly used.")
+        st.warning(
+            f"**Partial** — roll audit slope {slope:+.2f} mmHg/ms: arrival time is weakly used.  "
+            "The curve tilts slightly left but the effect is small — the model blends physics with "
+            "the shortcut confound."
+        )
     else:
-        st.error(f"Spurious — accurate (R² {s['acc']:.2f}) but the roll audit is flat "
-                 f"({slope:+.2f} mmHg/ms): the model rides the confound, not arrival time.")
+        st.error(
+            f"**Spurious** — accurate (R² {s['acc']:.2f}) but the roll audit slope is "
+            f"{slope:+.2f} mmHg/ms, near zero (within a standard deviation of no effect).  "
+            "The curve noses **right** or stays flat: shifting arrival time does nothing to "
+            "predicted BP, so the model learned the shortcut confound rather than the physics."
+        )
 
     LIGHT = "#8a9bbf"
     g = st.columns(4)
@@ -182,7 +195,7 @@ with tab_syn:
         ax.axvline(0, color="#ddd", lw=.8, zorder=0)
         ax.plot(SHIFT_MS, curve, "-o", ms=3.5, color=NAVY)
         ax.set_xlabel("arrival-time shift (ms)"); ax.set_ylabel("pred. BP (mmHg)")
-        ax.set_title(f"slope {slope:+.2f} (faithful<0)", fontsize=8)
+        ax.set_title(f"slope {slope:+.2f} mmHg/ms  (faithful → noses left, <0)", fontsize=8)
         fig.tight_layout(); st.pyplot(fig)
     with g[3]:
         st.caption("Audits vs α")
@@ -196,8 +209,14 @@ with tab_syn:
         ax.set_xlabel("α"); ax.legend(fontsize=6.5, frameon=False)
         fig.tight_layout(); st.pyplot(fig)
 
-    st.caption("Only the roll audit tracks α. Accuracy and the linear probe stay high at every α — "
-               "the model looks good on both while ignoring arrival time and riding the confound.")
+    st.caption(
+        "**Note on units:** BP targets are z-scored during training (zero mean, SD ≈ 17.3 mmHg); "
+        "the roll audit de-normalizes back to mmHg so the slope is interpretable in physical units.  "
+        "Only the roll audit tracks α.  Accuracy and the linear probe stay high at every α — "
+        "both look good while the model ignores arrival time and rides the shortcut confound.  "
+        "A slope near zero (within a standard deviation of no effect) means the model is not "
+        "using the physics pathway at all."
+    )
 
 # ── REAL WAVEFORMS ────────────────────────────────────────────────────────────
 with tab_real:
