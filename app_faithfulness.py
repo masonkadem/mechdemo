@@ -16,9 +16,12 @@ plt.rcParams.update({"axes.spines.top": False, "axes.spines.right": False, "font
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 # ── synthetic model ──────────────────────────────────────────────────────────
-# Two input channels: an ARRIVAL-TIME channel (ptt, the physics signal) and a SEPARATE
-# CONFOUND channel that also correlates with BP (the real-data analogue of an HR shortcut).
-# The physics branch reads ptt; the shortcut branch reads the confound. α mixes them.
+# Two input channels:
+#   1. ARRIVAL-TIME channel: PTT, the physics signal.
+#   2. SHORTCUT/CONFOUND channel: a noisy copy of the z-scored BP label for that sample
+#      (i.e. (BP_i - mean) / SD + noise).  It is NOT the scalar SD — it varies per patient
+#      and is nearly identical to what the model is trying to predict.
+# The physics branch reads PTT; the shortcut branch reads the confound.  α mixes them.
 B, BP_MEAN, BP_STD = 80.0, 120.0, 17.3
 A_of = lambda p: 10.0 * 0.4 ** p
 ptt_from_bp = lambda bp, p: (A_of(p) / (bp - B)) ** (1.0 / p)
@@ -33,7 +36,7 @@ def sample(n, seed, p):
     rng = np.random.default_rng(seed)
     bp = rng.uniform(90, 150, n)
     ptt = ptt_from_bp(bp, p) + rng.normal(0, 0.006, n)                # arrival-time channel
-    conf = (bp - BP_MEAN) / BP_STD + rng.normal(0, CONF_NOISE, n)     # separate confound channel
+    conf = (bp - BP_MEAN) / BP_STD + rng.normal(0, CONF_NOISE, n)     # noisy z-score of BP per sample (≠ the scalar SD)
     X = np.stack([ptt, conf], 1)
     return (torch.tensor(X, dtype=torch.float32),
             torch.tensor((bp - BP_MEAN) / BP_STD, dtype=torch.float32))
@@ -210,12 +213,14 @@ with tab_syn:
         fig.tight_layout(); st.pyplot(fig)
 
     st.caption(
-        "**Note on units:** BP targets are z-scored during training (zero mean, SD ≈ 17.3 mmHg); "
-        "the roll audit de-normalizes back to mmHg so the slope is interpretable in physical units.  "
-        "Only the roll audit tracks α.  Accuracy and the linear probe stay high at every α — "
-        "both look good while the model ignores arrival time and rides the shortcut confound.  "
-        "A slope near zero (within a standard deviation of no effect) means the model is not "
-        "using the physics pathway at all."
+        "**Shortcut channel:** for each sample the model receives a *per-patient* noisy copy of "
+        "the z-scored BP label — `(BP_i − 120) / 17.3 + noise` — not the scalar standard "
+        "deviation (17.3 mmHg).  The SD is only the denominator used to normalise; the confound "
+        "itself varies with each patient's BP and correlates ~0.94 with the target.  "
+        "**Units:** BP targets are z-scored during training; the roll audit de-normalises back "
+        "to mmHg so the slope is interpretable in physical units.  "
+        "Only the roll audit tracks α — accuracy and the linear probe stay high at every α "
+        "while the model ignores arrival time and exploits the shortcut."
     )
 
 # ── REAL WAVEFORMS ────────────────────────────────────────────────────────────
