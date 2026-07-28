@@ -1,0 +1,102 @@
+{
+  "lenet1d": {
+    "decay": {
+      "slope": -1.7978324890136674,
+      "expect": 0,
+      "sign_ok": null,
+      "resp_range": 3.2742576599121094
+    },
+    "aix": {
+      "slope": 6.467943827311168,
+      "expect": 1,
+      "sign_ok": true,
+      "resp_range": 4.700992584228516
+    },
+    "rise": {
+      "slope": -5.834559122721346,
+      "expect": -1,
+      "sign_ok": true,
+      "resp_range": 4.0045166015625
+    }
+  },
+  "inception1d": {
+    "decay": {
+      "slope": -4.615762329101583,
+      "expect": 0,
+      "sign_ok": null,
+      "resp_range": 8.886260986328125
+    },
+    "aix": {
+      "slope": 5.859184265136695,
+      "expect": 1,
+      "sign_ok": true,
+      "resp_range": 5.242557525634766
+    },
+    "rise": {
+      "slope": 3.8039398193359317,
+      "expect": -1,
+      "sign_ok": false,
+      "resp_range": 3.526653289794922
+    }
+  },
+  "xresnet1d50": {
+    "decay": {
+      "slope": 1.5662162780761661,
+      "expect": 0,
+      "sign_ok": null,
+      "resp_range": 6.376190185546875
+    },
+    "aix": {
+      "slope": -10.24797821044926,
+      "expect": 1,
+      "sign_ok": false,
+      "resp_range": 7.313678741455078
+    },
+    "rise": {
+      "slope": -6.350153605143261,
+      "expect": -1,
+      "sign_ok": true,
+      "resp_range": 5.28497314453125
+    }
+  },
+  "xresnet1d101": {
+    "decay": {
+      "slope": -5.286795806884767,
+      "expect": 0,
+      "sign_ok": null,
+      "resp_range": 10.308357238769531
+    },
+    "aix": {
+      "slope": -1.1066436767578798,
+      "expect": 1,
+      "sign_ok": false,
+      "resp_range": 4.758968353271484
+    },
+    "rise": {
+      "slope": -11.58589935302734,
+      "expect": -1,
+      "sign_ok": true,
+      "resp_range": 8.503536224365234
+    }
+  },
+  "transformer": {
+    "decay": {
+      "slope": -11.370227050781262,
+      "expect": 0,
+      "sign_ok": null,
+      "resp_range": 22.107830047607422
+    },
+    "aix": {
+      "slope": 23.05731201171871,
+      "expect": 1,
+      "sign_ok": true,
+      "resp_range": 13.076885223388672
+    },
+    "rise": {
+      "slope": 3.383232116699208,
+      "expect": -1,
+      "sign_ok": false,
+      "resp_range": 2.0326004028320312
+    }
+  }
+}

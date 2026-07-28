@@ -1,0 +1,20 @@
+\begin{tabular}{lr}
+\toprule
+Quantity & Value \\
+\midrule
+Faithful model (feature source) & xresnet1d50 \\
+Audit-passing features & pat \\
+ID DBP MAE (mmHg) & 8.89 \\
+OOD DBP MAE -- ppgbp & 11.18 \\
+OOD DBP MAE -- sensors & 8.05 \\
+OOD DBP MAE -- bcg & 8.07 \\
+OOD DBP MAE -- uci2 & 8.63 \\
+OOD DBP MAE -- mimic-bp & 9.87 \\
+\midrule
+Age/sex ablation set & ppgbp \\
+DBP MAE with age+sex & 8.84 \\
+DBP MAE without & 9.72 \\
+Improvement from demographics & +0.88 mmHg \\
+SHAP mean$|\cdot|$: age / sex & 1.97 / 0.58 \\
+\bottomrule
+\end{tabular}

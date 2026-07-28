@@ -1,0 +1,240 @@
+{
+  "optuna_full": {
+    "id_dbp": 8.429099630610402,
+    "val_dbp": 8.544827543811406,
+    "params": {
+      "n_estimators": 1045,
+      "learning_rate": 0.02780774405817438,
+      "num_leaves": 162,
+      "max_depth": 4,
+      "min_child_samples": 52,
+      "subsample": 0.9684847206664051,
+      "colsample_bytree": 0.598283910672657,
+      "reg_lambda": 2.1042562398160105
+    },
+    "importance": [
+      [
+        "Age",
+        166.0
+      ],
+      [
+        "Peak height",
+        114.0
+      ],
+      [
+        "BMI",
+        112.0
+      ],
+      [
+        "Kurtosis",
+        74.0
+      ],
+      [
+        "APG e/a",
+        74.0
+      ],
+      [
+        "AIx",
+        66.0
+      ],
+      [
+        "RR mean",
+        64.0
+      ],
+      [
+        "APG d/a",
+        62.0
+      ],
+      [
+        "APG b/a",
+        54.0
+      ],
+      [
+        "Cardiac period",
+        50.0
+      ],
+      [
+        "Systolic area",
+        46.0
+      ],
+      [
+        "Crest time",
+        44.0
+      ],
+      [
+        "Pulse width 25%",
+        44.0
+      ],
+      [
+        "Rise time",
+        39.0
+      ],
+      [
+        "PAT (peak)",
+        35.0
+      ],
+      [
+        "Fractal (Higuchi)",
+        32.0
+      ],
+      [
+        "PTT var",
+        31.0
+      ],
+      [
+        "APG c/a",
+        29.0
+      ],
+      [
+        "HR",
+        28.0
+      ],
+      [
+        "VPG max",
+        28.0
+      ],
+      [
+        "xcorr lag",
+        28.0
+      ],
+      [
+        "Diastolic decay",
+        26.0
+      ],
+      [
+        "QRS amp",
+        25.0
+      ],
+      [
+        "xcorr peak",
+        25.0
+      ],
+      [
+        "Fractal (Katz)",
+        23.0
+      ],
+      [
+        "PAT (foot)",
+        21.0
+      ],
+      [
+        "Amplitude",
+        20.0
+      ],
+      [
+        "RR SDNN",
+        20.0
+      ],
+      [
+        "Sex",
+        19.0
+      ],
+      [
+        "RR RMSSD",
+        15.0
+      ],
+      [
+        "APG b/a",
+        13.0
+      ],
+      [
+        "Spectral entropy",
+        11.0
+      ],
+      [
+        "Aging index",
+        11.0
+      ],
+      [
+        "Dicrotic notch",
+        10.0
+      ],
+      [
+        "xcorr width",
+        10.0
+      ],
+      [
+        "Pulse width 50%",
+        8.0
+      ],
+      [
+        "PAT",
+        5.0
+      ]
+    ],
+    "ood": {
+      "bcg": 7.55,
+      "sensors": 8.12,
+      "uci2": 9.12,
+      "ppgbp": 10.35,
+      "mimic_bp": 9.95
+    }
+  },
+  "sfs": {
+    "selected": [
+      "rise",
+      "aix",
+      "apg",
+      "kurt",
+      "peak",
+      "apg_c_a",
+      "apg_e_a",
+      "pw25",
+      "pw50",
+      "rr_mean",
+      "pat_peak",
+      "age"
+    ],
+    "selected_readable": [
+      "Rise time",
+      "AIx",
+      "APG b/a",
+      "Kurtosis",
+      "Peak height",
+      "APG c/a",
+      "APG e/a",
+      "Pulse width 25%",
+      "Pulse width 50%",
+      "RR mean",
+      "PAT (peak)",
+      "Age"
+    ],
+    "id_dbp": 8.477243438970815,
+    "cv_curve": {
+      "1": 9.478,
+      "2": 9.398,
+      "3": 9.287,
+      "4": 9.168,
+      "5": 9.042,
+      "6": 8.975,
+      "7": 8.833,
+      "8": 8.757,
+      "9": 8.741,
+      "10": 8.692,
+      "11": 8.681,
+      "12": 8.645
+    },
+    "ood": {
+      "bcg": 9.14,
+      "sensors": 8.41,
+      "uci2": 11.87,
+      "ppgbp": 12.01,
+      "mimic_bp": 11.61
+    }
+  },
+  "single_tree": {
+    "id_dbp": 9.128582440097865,
+    "params": {
+      "num_leaves": 27,
+      "max_depth": 8,
+      "min_child_samples": 92
+    },
+    "ood": {
+      "bcg": 7.83,
+      "sensors": 8.27,
+      "uci2": 8.65,
+      "ppgbp": 10.24,
+      "mimic_bp": 16.12
+    }
+  }
+}

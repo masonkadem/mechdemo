@@ -1,0 +1,119 @@
+{
+  "paper_calfree": {
+    "Baseline (median)": [
+      14.88,
+      9.44
+    ],
+    "LeNet1d": [
+      12.37,
+      7.89
+    ],
+    "XResNet1d50": [
+      12.4,
+      7.85
+    ],
+    "XResNet1d101": [
+      12.7,
+      8.05
+    ],
+    "Inception1d": [
+      14.54,
+      10.96
+    ],
+    "S4": [
+      12.39,
+      8.03
+    ]
+  },
+  "gbm_all": {
+    "n": 37,
+    "sbp": 13.434954270752417,
+    "dbp": 8.523510919740353,
+    "features": [
+      "pat",
+      "rise",
+      "aix",
+      "apg",
+      "kurt",
+      "notch",
+      "decay",
+      "peak",
+      "hr",
+      "period",
+      "amp",
+      "hfd",
+      "katz_fd",
+      "spec_ent",
+      "vpg_max",
+      "apg_b_a",
+      "apg_c_a",
+      "apg_d_a",
+      "apg_e_a",
+      "aging_idx",
+      "crest",
+      "pw25",
+      "pw50",
+      "sys_area",
+      "rr_mean",
+      "rr_sdnn",
+      "rr_rmssd",
+      "qrs_amp",
+      "pat_foot",
+      "pat_peak",
+      "ptt_var",
+      "xcorr_lag",
+      "xcorr_peak",
+      "xcorr_width",
+      "age",
+      "sex",
+      "bmi"
+    ]
+  },
+  "gbm_forward": {
+    "order": [
+      "apg_d_a",
+      "age",
+      "pat_peak",
+      "apg_b_a",
+      "pw25",
+      "decay",
+      "xcorr_peak",
+      "ptt_var",
+      "period",
+      "amp",
+      "crest",
+      "hfd"
+    ],
+    "curve": [
+      9.143713900405505,
+      8.939660511352434,
+      8.828978989135376,
+      8.65714798049372,
+      8.551260595820501,
+      8.535941490122852,
+      8.494778553581181,
+      8.475917592072037,
+      8.430691679519546,
+      8.427541677623566,
+      8.426622921200734,
+      8.411268198523798
+    ],
+    "selected": [
+      "apg_d_a",
+      "age",
+      "pat_peak",
+      "apg_b_a",
+      "pw25",
+      "decay",
+      "xcorr_peak",
+      "ptt_var",
+      "period",
+      "amp",
+      "crest",
+      "hfd"
+    ],
+    "n": 12,
+    "sbp": 13.384819907886225,
+    "dbp": 8.439521291006777
+  }
+}

@@ -179,12 +179,38 @@ def predict(model, X, device, bs=512):
 
 
 # ----------------------------------------------------------------- audits
+def _shift_channel(x, d, edge=8):
+    """Shift a 1-D-per-row channel (N, L) by d samples WITHOUT the circular wrap that np.roll
+    introduces. The vacated end is filled by edge-value replication (hold the boundary sample),
+    which avoids injecting the far-end of the waveform as a spurious pulse. `edge` samples at
+    each end are additionally held flat so a reviewer cannot attribute the response to a
+    wrap-around discontinuity."""
+    N, L = x.shape
+    out = np.empty_like(x)
+    d = int(d)
+    if d == 0:
+        out[:] = x
+    elif d > 0:                                   # shift later (right): pad front with x[:,0]
+        out[:, d:] = x[:, :L - d]
+        out[:, :d] = x[:, :1]
+    else:                                         # shift earlier (left): pad tail with x[:,-1]
+        out[:, :L + d] = x[:, -d:]
+        out[:, L + d:] = x[:, -1:]
+    return out
+
+
 def causal_ptt_audit(model, X, fs, device, ppg_pos=PPG, deltas=(-6, -4, -2, 0, 2, 4, 6),
-                     n_max=1500, seed=0, predict_fn=None):
+                     n_max=1500, seed=0, predict_fn=None, null_channels=None):
     """INPUT-space causal test: shift the PPG channel by +/- delta samples (later PPG =
     longer PTT) and measure how predicted BP responds. Faithful physiology = NEGATIVE
     slope (longer PTT -> lower BP). Returns per-target slope stats + mean response curves.
     DBP is the theoretically PTT-coupled target (pulse propagates during diastole).
+
+    Hardened for publication:
+      * non-circular shift (`_shift_channel`) so no wrap-around artifact drives the response;
+      * `null_channels`: also shift a channel that carries NO arrival-time information as a
+        negative control -- a faithful response to the PPG shift should be specific, so the
+        null slope should sit near zero. Returns null slope stats under out['null'].
 
     predict_fn : optional callable (X_rolled) -> (M, 2); lets you audit a non-torch
     'model' such as an analytic detect-PTT-then-map estimator. Defaults to the torch model."""
@@ -193,11 +219,16 @@ def causal_ptt_audit(model, X, fs, device, ppg_pos=PPG, deltas=(-6, -4, -2, 0, 2
     rng = np.random.default_rng(seed)
     sel = rng.choice(len(X), min(n_max, len(X)), replace=False); sel.sort()
     Xs = X[sel]; dt = np.array(deltas) / fs
-    preds = np.zeros((len(Xs), len(deltas), 2), np.float32)
-    for j, d in enumerate(deltas):
-        Xd = Xs.copy()
-        Xd[:, :, ppg_pos] = np.roll(Xs[:, :, ppg_pos], int(d), axis=1)
-        preds[:, j] = predict_fn(Xd)
+
+    def _sweep(shift_pos):
+        preds = np.zeros((len(Xs), len(deltas), 2), np.float32)
+        for j, d in enumerate(deltas):
+            Xd = Xs.copy()
+            Xd[:, :, shift_pos] = _shift_channel(Xs[:, :, shift_pos], d)
+            preds[:, j] = predict_fn(Xd)
+        return preds
+
+    preds = _sweep(ppg_pos)
     out = {"shift_ms": (dt * 1000).tolist()}
     for k, name in [(0, "sbp"), (1, "dbp")]:
         slopes = np.array([np.polyfit(dt, preds[i, :, k], 1)[0] for i in range(len(Xs))])
@@ -207,6 +238,15 @@ def causal_ptt_audit(model, X, fs, device, ppg_pos=PPG, deltas=(-6, -4, -2, 0, 2
             "resp_range_mmHg": float((preds[:, :, k].max(1) - preds[:, :, k].min(1)).mean()),
             "curve": preds[:, :, k].mean(0).tolist(),
         }
+    # negative control: shifting a non-arrival-time channel should barely move BP
+    if null_channels is not None:
+        for nc in ([null_channels] if isinstance(null_channels, int) else null_channels):
+            npreds = _sweep(nc)
+            nsl = np.array([np.polyfit(dt, npreds[i, :, 1], 1)[0] for i in range(len(Xs))])
+            out.setdefault("null", {})[f"ch{nc}"] = {
+                "dBP_dPTT": float(np.median(nsl)),
+                "resp_range_mmHg": float((npreds[:, :, 1].max(1) - npreds[:, :, 1].min(1)).mean()),
+            }
     return out
 
 

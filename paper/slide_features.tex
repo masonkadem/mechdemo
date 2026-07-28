@@ -1,0 +1,28 @@
+\documentclass[border=8pt]{standalone}
+\usepackage{booktabs}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage[table]{xcolor}
+\usepackage{amssymb}
+\definecolor{hl}{gray}{0.92}
+\begin{document}
+\begin{tabular}{clllcc}
+\toprule
+\# & Feature & Family & Val DBP MAE & Gain \\
+   &         &        & (mmHg)      & (mmHg) \\
+\midrule
+\rowcolor{hl} 1 & APG d/a (stiffness)   & stiffness    & 9.14 & -- \\
+\rowcolor{hl} 2 & Age                   & demographic  & 8.94 & $-0.20$ \\
+\rowcolor{hl} 3 & PAT (R\,$\to$\,PPG peak) & arrival time & 8.83 & $-0.11$ \\
+\rowcolor{hl} 4 & APG b/a (stiffness)   & stiffness    & 8.66 & $-0.17$ \\
+\rowcolor{hl} 5 & Pulse width 25\%      & morphology   & 8.55 & $-0.11$ \\
+6  & Diastolic decay       & morphology   & 8.54 & $-0.02$ \\
+7  & ECG--PPG xcorr        & arrival time & 8.49 & $-0.04$ \\
+8  & PTT variability       & arrival time & 8.48 & $-0.02$ \\
+9  & Cardiac period        & rate         & 8.43 & $-0.05$ \\
+10 & PPG amplitude         & morphology   & 8.43 & $-0.00$ \\
+11 & Crest time            & morphology   & 8.43 & $-0.00$ \\
+12 & Fractal dim (Higuchi) & complexity   & 8.41 & $-0.02$ \\
+\bottomrule
+\end{tabular}
+\end{document}

@@ -1,5 +1,6 @@
 """Mechanistic faithfulness demo.  streamlit run app_faithfulness.py"""
 import os, json, sys
+from pathlib import Path
 import numpy as np
 import torch, torch.nn as nn
 import matplotlib.pyplot as plt
@@ -285,6 +286,15 @@ with tab_real:
 
 # ── FAITHFUL TO WHAT? ─────────────────────────────────────────────────────────
 with tab_cap:
+    st.markdown(
+        "#### Input-space causal intervention on a physiologically-informed quantity, tied to a "
+        "signed governing law\n"
+        "*A real faithfulness test that dissociates shortcuts from mechanism.*")
+    _dfig = Path(__file__).parent / "figures" / "fig_datasets.png"
+    if _dfig.exists():
+        st.image(str(_dfig), use_container_width=True,
+                 caption="Datasets: one training source (VitalDB), one in-distribution and five "
+                         "out-of-distribution tests. ECG+PPG sets support the roll-audit.")
     C, CV = load_capstone()
     if C is None or "cues" not in C:
         st.warning("Battery results not found (or stale). Run `python precompute_recon.py`.")

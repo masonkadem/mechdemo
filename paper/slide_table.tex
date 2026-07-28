@@ -1,0 +1,27 @@
+\documentclass[border=8pt]{standalone}
+\usepackage{booktabs}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage[table]{xcolor}
+\usepackage{amssymb}
+\begin{document}
+\begin{tabular}{lccccc}
+\toprule
+ & \multicolumn{2}{c}{Accuracy (DBP MAE)} & \multicolumn{3}{c}{Roll-audit (relative)} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-6}
+Model & ID & MIMIC (OOD) & slope & rank & response \\
+      & (mmHg) & (mmHg) & (mmHg/s) & (sensitivity) & range \\
+\midrule
+XResNet1d50  & 8.69 & 12.56 & $-28.2$ & 1 (most) & large \\
+Inception1d  & 8.57 & 11.80 & $-19.5$ & 2 & mod. \\
+LeNet1d      & 8.45 & 13.54 & $-7.3$  & 3 & small \\
+Transformer  & 8.57 & 13.58 & $-1.4$  & 4 (least) & flat \\
+XResNet1d101 & 8.61 & 12.52 & $+8.6$  & opposite & large \\
+\midrule
+\multicolumn{6}{p{0.86\linewidth}}{\itshape\footnotesize The roll-audit measures each model's
+\emph{relative} sensitivity to an arrival-time perturbation (identical across models). The
+cross-model ranking and OOD correlation are meaningful; the absolute slope magnitude is not
+physiologically calibrated and is not interpreted here.} \\
+\bottomrule
+\end{tabular}
+\end{document}

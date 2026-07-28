@@ -1,0 +1,86 @@
+\documentclass[8pt]{extarticle}
+\usepackage[margin=0.45in]{geometry}
+\usepackage{graphicx,booktabs,amsmath,microtype,adjustbox,multicol}
+\usepackage[table]{xcolor}
+\usepackage{caption}
+\captionsetup{font=footnotesize,labelfont=bf}
+\usepackage{titlesec}
+\titlespacing{\section}{0pt}{4pt}{2pt}
+\titleformat{\section}{\bfseries}{\thesection.}{0.5em}{}
+\pagestyle{empty}
+\setlength{\parskip}{2pt}\setlength{\parindent}{0pt}
+\graphicspath{{../figures/}}
+
+\begin{document}
+
+\begin{center}
+{\Large\bfseries Accuracy is not mechanism: a causal roll-audit of PPG blood-pressure models
+and their out-of-distribution failure}\\[2pt]
+{\footnotesize Mechanistic-faithfulness audit across VitalDB, MIMIC-BP, and four external PPG datasets}
+\end{center}
+
+\vspace{-4pt}
+\noindent\rule{\textwidth}{0.4pt}
+
+\textbf{Abstract.} Deep photoplethysmography (PPG) blood-pressure (BP) models are compared on
+in-distribution error, but error alone cannot say \emph{whether a model uses the physiology it
+claims}. We train five architectures on VitalDB and audit them with (i) a causal \emph{roll
+test} that shifts the PPG channel to lengthen pulse arrival time (PTT) and measures the sign of
+the BP response, and (ii) a 31-cue linear-probe battery read across layers. All five models
+reach near-identical in-distribution DBP error ($\sim$8~mmHg) yet differ up to $8\times$ in how
+strongly and correctly they use PTT, and this mechanism gap---not the in-distribution
+error---predicts a large out-of-distribution (OOD) collapse ($+2$ to $+13$~mmHg) across five
+external datasets. Distilling the single cue that survives the audit into a gradient-boosted
+tree matches deep in-distribution accuracy and generalizes better; adding age and sex lowers
+error by $0.88$~mmHg on a clinical cohort.
+
+\vspace{1pt}
+\begin{minipage}[t]{0.53\textwidth}
+\vspace{-2pt}
+\includegraphics[width=\linewidth]{fig0_design.png}\\[-1pt]
+{\scriptsize\textbf{Figure~1.} (a)~Design. (b)~Example ECG/PPG waveforms: the morphology shift the
+model faces. (c)~SBP/DBP distribution shift. (d)~The causal roll-audit.}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.44\textwidth}
+\vspace{-2pt}
+\captionof{table}{Datasets and measured distribution shift.}
+\adjustbox{max width=\linewidth}{\scriptsize\input{table1_datasets}}
+\vspace{3pt}
+\captionof{table}{ID vs.\ OOD DBP error and audited mechanism.}
+\adjustbox{max width=\linewidth}{\scriptsize\input{table2_results}}
+\vspace{3pt}
+\captionof{table}{Interpretable model from audit-passing features.}
+\adjustbox{max width=\linewidth}{\scriptsize\input{table3_gbm}}
+\end{minipage}
+
+\vspace{4pt}
+\begin{multicols}{2}
+\section{Setup}
+Train: VitalDB, subject-disjoint splits. OOD: MIMIC-BP (ECG+PPG, 1{,}524 patients---the
+roll-audit runs here) plus BCG, Sensors, UCI2, PPG-BP (PPG-only). Distribution shift is measured
+per cue (KS vs.\ VitalDB, Table~1), so ``OOD'' is quantified rather than assumed. External
+accuracy is reported with subject-level bootstrap CIs.
+
+\section{Key findings}
+\textbf{(1) Same accuracy, different fate.} In-distribution DBP error is flat across models
+($8.0$--$8.6$~mmHg); OOD error fans out to $21$~mmHg. \emph{Larger models generalize worse}:
+XResNet101 is best in-distribution but worst on every OOD set; the smallest model (LeNet)
+transfers best.\\
+\textbf{(2) Mechanism predicts the gap.} The causal PAT slope (Table~2) ranges from $-40$
+(strongly, correctly physiological) to $-5$~mmHg/s (barely used) at identical in-distribution
+error, and tracks OOD fragility.\\
+\textbf{(3) Decodable $\neq$ used.} Many cues are linearly decodable (e.g.\ pulse width
+$R^2\!=\!0.70$) yet fail the causal sign test---the faithfulness signature. For the strongest
+model only \emph{PTT} passes both.\\
+\textbf{(4) Faithful features transfer.} A tree built from the audit-passing cue matches deep
+in-distribution accuracy and beats every deep model on MIMIC-BP; age/sex cut error by
+$0.88$~mmHg on PPG-BP (SHAP: age $1.97$, sex $0.58$).
+\end{multicols}
+
+\vspace{2pt}
+\noindent\rule{\textwidth}{0.4pt}
+{\footnotesize\textbf{Takeaway.} An in-distribution leaderboard hides which models are right for
+the right reason. A causal input-space audit exposes it, predicts OOD failure, and points to the
+features an interpretable, better-generalizing model should use.}
+
+\end{document}
