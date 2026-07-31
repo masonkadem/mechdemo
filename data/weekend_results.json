@@ -1,0 +1,233 @@
+{
+  "1_audit_stability": {
+    "lenet1d": {
+      "wide48": {
+        "slope_mean": -10.01069339967911,
+        "slope_std": 0.6831786240309857,
+        "slope_lo": -11.017089549984211,
+        "slope_hi": -8.630357044083862,
+        "range_mean": 4.279798746109009,
+        "frac_correct_mean": 0.6005208333333333
+      },
+      "narrow16": {
+        "slope_mean": -11.612993478775522,
+        "slope_std": 1.6436110606571561,
+        "slope_lo": -14.298744201660675,
+        "slope_hi": -8.991336226463936,
+        "range_mean": 1.792870392402013,
+        "frac_correct_mean": 0.5755208333333334
+      }
+    },
+    "inception1d": {
+      "wide48": {
+        "slope_mean": -8.011744490691644,
+        "slope_std": 2.3396554702465133,
+        "slope_lo": -10.99697606904162,
+        "slope_hi": -5.076971117939268,
+        "range_mean": 5.221086661020915,
+        "frac_correct_mean": 0.5659375
+      },
+      "narrow16": {
+        "slope_mean": -10.417326291402645,
+        "slope_std": 3.062912322098147,
+        "slope_lo": -15.349265336990834,
+        "slope_hi": -4.858306646347421,
+        "range_mean": 2.1097195148468018,
+        "frac_correct_mean": 0.55625
+      }
+    },
+    "xresnet1d50": {
+      "wide48": {
+        "slope_mean": -13.151077287537715,
+        "slope_std": 2.2463020867803682,
+        "slope_lo": -16.358362883329374,
+        "slope_hi": -9.372324815818317,
+        "range_mean": 5.42642068862915,
+        "frac_correct_mean": 0.5894791666666667
+      },
+      "narrow16": {
+        "slope_mean": -14.325527350108393,
+        "slope_std": 2.9398046014036483,
+        "slope_lo": -17.713443636894922,
+        "slope_hi": -9.690853357316033,
+        "range_mean": 2.2191134492556253,
+        "frac_correct_mean": 0.5728125
+      }
+    },
+    "xresnet1d101": {
+      "wide48": {
+        "slope_mean": -18.263495039372284,
+        "slope_std": 2.072659992629377,
+        "slope_lo": -21.221585358892213,
+        "slope_hi": -14.683098133121247,
+        "range_mean": 5.4609034061431885,
+        "frac_correct_mean": 0.62375
+      },
+      "narrow16": {
+        "slope_mean": -19.30869817733816,
+        "slope_std": 2.5301323953709907,
+        "slope_lo": -22.591859698296307,
+        "slope_hi": -15.003943443299223,
+        "range_mean": 2.2170977791150412,
+        "frac_correct_mean": 0.6045833333333334
+      }
+    },
+    "transformer": {
+      "wide48": {
+        "slope_mean": 0.8265886987958747,
+        "slope_std": 0.9962270778563669,
+        "slope_lo": -0.7819326860565887,
+        "slope_hi": 1.9642547837327082,
+        "range_mean": 3.291800399621328,
+        "frac_correct_mean": 0.4913541666666666
+      },
+      "narrow16": {
+        "slope_mean": 1.9622186819708214,
+        "slope_std": 1.6245768221458072,
+        "slope_lo": -0.6397640705110589,
+        "slope_hi": 4.604768753051321,
+        "range_mean": 1.29813818136851,
+        "frac_correct_mean": 0.48500000000000004
+      }
+    }
+  },
+  "2_causal_shortcut": {
+    "lenet1d": {
+      "pat_slope": -9.384155273437589,
+      "pat_range": 4.198328018188477,
+      "hr_slope": 31.77363586425777,
+      "hr_range": 9.224979400634766,
+      "hr_over_pat_range": 2.1972983908050914
+    },
+    "inception1d": {
+      "pat_slope": -6.040385791233589,
+      "pat_range": 5.078206539154053,
+      "hr_slope": 45.74676513671873,
+      "hr_range": 12.85927963256836,
+      "hr_over_pat_range": 2.532248251599916
+    },
+    "xresnet1d50": {
+      "pat_slope": -13.232018266405422,
+      "pat_range": 5.395042896270752,
+      "hr_slope": 45.69367472330726,
+      "hr_range": 12.97116470336914,
+      "hr_over_pat_range": 2.4042746184522468
+    },
+    "xresnet1d101": {
+      "pat_slope": -14.418001685823842,
+      "pat_range": 5.33516263961792,
+      "hr_slope": 45.61294047037757,
+      "hr_range": 13.150890350341797,
+      "hr_over_pat_range": 2.464946476086933
+    },
+    "transformer": {
+      "pat_slope": -0.19548194749010478,
+      "pat_range": 3.3174285888671875,
+      "hr_slope": 16.36742655436194,
+      "hr_range": 4.672325134277344,
+      "hr_over_pat_range": 1.4084176969320685
+    }
+  },
+  "3_reflection_audit": {
+    "lenet1d": {
+      "aix": {
+        "slope": 1.8930689493814947,
+        "expect": 1,
+        "sign_ok": true,
+        "range": 3.1018600463867188
+      },
+      "rise": {
+        "slope": -1.8842544555664404,
+        "expect": -1,
+        "sign_ok": true,
+        "range": 2.5006790161132812
+      },
+      "decay": {
+        "slope": -5.665917968750011,
+        "expect": 0,
+        "sign_ok": null,
+        "range": 12.925079345703125
+      }
+    },
+    "inception1d": {
+      "aix": {
+        "slope": 11.549077351887991,
+        "expect": 1,
+        "sign_ok": true,
+        "range": 6.71429443359375
+      },
+      "rise": {
+        "slope": 2.582130432128915,
+        "expect": -1,
+        "sign_ok": false,
+        "range": 3.042621612548828
+      },
+      "decay": {
+        "slope": -7.837117004394535,
+        "expect": 0,
+        "sign_ok": null,
+        "range": 15.504684448242188
+      }
+    },
+    "xresnet1d50": {
+      "aix": {
+        "slope": 9.902595520019512,
+        "expect": 1,
+        "sign_ok": true,
+        "range": 5.610607147216797
+      },
+      "rise": {
+        "slope": 2.73233540852863,
+        "expect": -1,
+        "sign_ok": false,
+        "range": 2.182849884033203
+      },
+      "decay": {
+        "slope": -5.599993133544926,
+        "expect": 0,
+        "sign_ok": null,
+        "range": 10.511905670166016
+      }
+    },
+    "xresnet1d101": {
+      "aix": {
+        "slope": 9.361427307128872,
+        "expect": 1,
+        "sign_ok": true,
+        "range": 5.061237335205078
+      },
+      "rise": {
+        "slope": 0.4531834920246863,
+        "expect": -1,
+        "sign_ok": false,
+        "range": 1.4601364135742188
+      },
+      "decay": {
+        "slope": -3.7420616149902446,
+        "expect": 0,
+        "sign_ok": null,
+        "range": 6.710258483886719
+      }
+    },
+    "transformer": {
+      "aix": {
+        "slope": 40.80300394694008,
+        "expect": 1,
+        "sign_ok": true,
+        "range": 23.717575073242188
+      },
+      "rise": {
+        "slope": 2.525428771972617,
+        "expect": -1,
+        "sign_ok": false,
+        "range": 1.5481376647949219
+      },
+      "decay": {
+        "slope": -17.281697845458996,
+        "expect": 0,
+        "sign_ok": null,
+        "range": 33.37602615356445
+      }
+    }
+  }
+}
