@@ -12,10 +12,13 @@ import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parent
 NAVY, RED = "#2f4b7c", "#c1543b"
-# novel = the APG landmark TIMINGS and alternative APG indices introduced in this work
-# (NOT xcorr, which is a separate ECG-PPG idea, and NOT the established a-e amplitude ratios).
-NOVEL = {"t_b", "t_c", "t_d", "t_e", "apg_cd_a", "apg_bd_a", "apg_ce_a",
-         "takazawa", "ushiro", "reflect_be"}
+# APG landmark TIMINGS + alternative APG indices. NOT claimed as novel: T_a..T_e already appear
+# in the published BP-Benchmark feature set (verified in data/bcg_dataset/feat_fold_0.csv).
+# Highlighted here because they are the features that REPRODUCE on a held-out subject split,
+# whereas the amplitude-ratio combinations do not (see apg_discovery.py).
+VALIDATED = {"t_b", "t_c", "t_d", "t_e", "apg_cd_a", "apg_bd_a", "apg_ce_a",
+             "takazawa", "ushiro", "reflect_be"}
+NOVEL = VALIDATED          # kept as an alias so the plotting code below is unchanged
 
 
 def main():
@@ -42,8 +45,8 @@ def main():
         ax.spines[["top", "right"]].set_visible(False)
     # legend
     from matplotlib.patches import Patch
-    axes[1].legend(handles=[Patch(color=NAVY, label="established feature"),
-                            Patch(color=RED, label="novel (this work)")],
+    axes[1].legend(handles=[Patch(color=NAVY, label="other features"),
+                            Patch(color=RED, label="APG timing/index (reproduces on held-out split)")],
                    fontsize=8.5, loc="lower right", frameon=False)
     fig.suptitle("Top-15 feature importance for blood-pressure prediction",
                  fontsize=13, y=1.0)
