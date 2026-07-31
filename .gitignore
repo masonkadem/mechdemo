@@ -36,6 +36,7 @@ compile.log
 figures/*.png
 figures/*.pdf
 !figures/fig_main.*
+!figures/fig_drug_feedback.*
 !figures/fig_app_tabs.*
 !figures/fig_channel_compare.*
 !figures/fig_probe.*
