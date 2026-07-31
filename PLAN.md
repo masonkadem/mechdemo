@@ -18,7 +18,10 @@ that mechanistic faithfulness predicts WITHIN-subject BP tracking.**
 | 4 | **Robustness ≠ faithfulness.** Noise augmentation improved OOD (16.2→15.0) but *weakened* the roll-audit response (−19.9→−9.6). | `data/noise_faithfulness.json` |
 | 5 | **The causal audit is validated.** Textbook `BP=−3/PAT+b` → slope +0.032 (93% of segments); inverted → −0.032 (7%); constant and amplitude nulls → exactly 0.000. | `data/audit_subject_controls.json` |
 | 6 | **Models carry no transferable between-subject signal.** On all five external sets the best model ties a constant predictor. | mean-predictor baseline (§2) |
-| 7 | **Models DO track within-subject BP change.** within-r 0.44–0.63; not a time artifact (partial r 0.631→0.637). Tracking *separates* models that ID accuracy cannot. | `within_subject.py` (first pass) |
+| 7 | **Models DO track within-subject BP change.** within-r 0.44–0.65; not a time artifact (partial r 0.631→0.637), and not a rate shortcut (HR-only reaches only 0.154). Tracking *separates* models that ID accuracy cannot. | `data/within_subject.json` |
+| 8 | **Faithfulness does NOT predict tracking.** Per-subject pairing at n=67 subjects/model: r = +0.07, +0.11, −0.06, −0.07, +0.12, every CI spanning zero. Well-powered null. | `data/within_subject.json` |
+| 9 | **All five models are anti-faithful at the median subject.** Median audit slope negative for every architecture; only 36–49% of subjects faithful (faithful = positive on the validated negative-arm sweep). Yet they track BP at 0.44–0.65. | `data/within_subject.json` |
+| 10 | **The amplitude null out-tracks every named physiological cue.** amp 0.270 vs PAT 0.190, AIx 0.184, HR 0.154. Within-subject tracking is substantially perfusion/signal-quality driven, not arterial mechanics. | `data/within_subject.json` |
 
 ---
 
@@ -41,6 +44,12 @@ Kept deliberately, so they are not re-derived or accidentally re-claimed.
   `audit_controls.py` pinning the median slope at zero. **The audit works** — see result 5.
 - **"VitalDB has 0 vasoactive-drug cases."** My query bug: channels are named by pump
   abbreviation (`Orchestra/PHEN_RATE`), not drug name. Real count is 2,905.
+- **"Mechanistic faithfulness predicts within-subject BP tracking."** The live hypothesis for
+  about two hours. Killed by its own test: per-subject pairing at n=67 subjects per model gives
+  r = +0.07 / +0.11 / −0.06 / −0.07 / +0.12, all CIs spanning zero. This is a well-powered null,
+  not an underpowered one. Faithfulness and capability are unrelated here, not merely decoupled.
+- **"~2000 VitalDB cases have cardiac output."** My substring match caught `Primus/CO2`
+  (capnography). Real CO is EV1000/Vigileo, ~325–508 cases.
 
 ---
 
@@ -61,37 +70,55 @@ Kept deliberately, so they are not re-derived or accidentally re-claimed.
 
 ---
 
-## 4. The live hypothesis
+## 4. The live hypothesis — PEP as the missing term
 
-> Cuffless BP models carry essentially no transferable *between-subject* signal, but they do
-> track *within-subject* BP change — and mechanistic faithfulness to pulse arrival time predicts
-> how well they track it.
+The previous hypothesis (faithfulness predicts within-subject tracking) is dead; see §2. What
+its autopsy leaves is a sharper question. Every model is **anti-faithful** to PAT (median slope
+negative, 36–49% of subjects faithful) while still tracking BP at 0.44–0.65. Two readings:
 
-Why this reframing was forced: within-subject SBP sd (13.3 mmHg) ≥ between-subject sd
-(12.3 mmHg); every subject spans >30 mmHg, median 73 mmHg. These are surgical cases, so the BP
-swings are drug and fluid events already present in our waveforms. Cross-dataset transfer was
-measuring the axis with the least signal.
+  (a) the models are wrong and exploit shortcuts; or
+  (b) **PAT itself is a bad target, and the models are right to distrust it.**
 
-**What must hold for this to be a finding (in dependency order):**
+(b) is physiologically motivated and testable. `PAT = PEP + PTT`. Only PTT carries arterial
+stiffness; **PEP (pre-ejection period) is cardiac** — electrical-to-mechanical delay plus
+isovolumic contraction — and it is large and time-varying. The entire cuffless-BP literature
+uses PAT as a stiffness proxy while PEP contaminates it.
 
-1. **Baselines** — HR-only, PAT-only, AIx-only, amplitude-null. *If HR-only reaches ~0.6, the
-   tracking is another shortcut and the hypothesis changes.* ← gating everything
-2. **Power** — pair per-subject audit slope with per-subject tracking (n≈144, not n=5), bootstrap CI.
-3. **Corrected slopes** — re-run all five nets through the validated audit.
-4. **Seed distribution** — finish stage 4; report mechanism per architecture with error bars.
+> **Hypothesis.** Pharmacological state gives a measurable handle on PEP. If PEP-corrected PAT
+> is what models actually track, that explains the anti-faithfulness, repairs the audit, and
+> converts part of the per-subject calibration constant into a measurable covariate.
+
+Why this is novel and why it is ours to do: propofol depresses contractility (lengthens PEP);
+ephedrine/epinephrine increase it (shorten PEP). Nobody has tested this at scale because nobody
+had PulseDB-scale waveforms joined to infusion records — VitalDB has both, natively.
+
+**Predictions, each falsifiable:**
+1. Audit slope becomes **more positive** (more faithful) when conditioned on drug state.
+2. Subjects on inotropes show **systematically different** PAT→BP slopes than drug-free subjects.
+3. Offset calibration is **partly replaceable** by drug/BIS/SV covariates (measured in stage 3).
+4. If (1)–(3) all fail, the models are simply unfaithful and (a) is the answer — also publishable,
+   and the audit method still stands.
 
 ---
 
 ## 5. Next steps
 
-**Now (running):** `within_subject.py` — steps 1 and 2 above.
+**Running:** `run_weekend2.py` — corrected audit, seed variance (gating), CalBased, tracking pairing.
 
-**Then, in order:**
-- Re-run the five deep nets through the corrected audit (`audit_subject.py` method).
-- Finish `deep_seeds` for seed error bars.
-- CalBased protocol run. Within-subject tracking is essentially what calibrated deployment
-  measures, so this connects directly rather than being a side quest.
+**Priority now (the PEP arm):**
+- Pull ~300 VitalDB cases with ART+PLETH+ECG plus an infusion record. Derive PEP from the
+  arterial upstroke (ECG-R → ART foot = PAT_art; PPG foot → PTT), which is what having a real
+  arterial line makes possible and PulseDB does not.
+- Test whether drug state explains PEP variance, then whether PEP-corrected PAT restores audit
+  faithfulness.
+- Quantify how much offset calibration drug/BIS/SV covariates buy back.
+
+**Also queued:**
+- Chase the amplitude-null result (result 10). It currently undermines the physiological reading
+  of within-subject tracking and needs an explanation either way.
 - Beat-level re-segmentation with a foot-quality gate (lifts PAT validity above 44%).
+- Visual feature→BP mapping: partial-dependence / SHAP panels computed **within-subject**, for
+  overall intuition about which features map to BP and how nonlinearly.
 
 **Clinical validation arm (native VitalDB — scoped, not started).**
 Use `api.vitaldb.net` directly, **not** PulseDB: PulseDB anonymized VitalDB case IDs into

@@ -1,0 +1,98 @@
+{
+  "n_subjects": 144,
+  "n_segments": 21600,
+  "baselines": {
+    "HR only": 0.15400193034690152,
+    "PAT only": 0.18951649266119525,
+    "AIx only": 0.18357235255726967,
+    "amp (null)": 0.2703174645944644
+  },
+  "models": {
+    "lenet1d": {
+      "within_r_median": 0.5245653613963626,
+      "within_r_iqr": [
+        0.37868533170459684,
+        0.6402231493987289
+      ],
+      "mae_within": 7.452373027801514,
+      "audit_slope_median": -0.010365438461303857,
+      "frac_subj_faithful": 0.3582089552238806,
+      "frac_segments_audited": 0.36125,
+      "r_slope_vs_tracking": 0.06957189846593591,
+      "r_ci": [
+        -0.16190839850189093,
+        0.2900836877319318
+      ],
+      "n_paired": 67
+    },
+    "inception1d": {
+      "within_r_median": 0.6475745542340483,
+      "within_r_iqr": [
+        0.4492040341974617,
+        0.7329752399346523
+      ],
+      "mae_within": 7.281781196594238,
+      "audit_slope_median": -0.002222967147826927,
+      "frac_subj_faithful": 0.4925373134328358,
+      "frac_segments_audited": 0.36125,
+      "r_slope_vs_tracking": 0.10965212919752769,
+      "r_ci": [
+        -0.12211025564379457,
+        0.33319867613457566
+      ],
+      "n_paired": 67
+    },
+    "xresnet1d50": {
+      "within_r_median": 0.6030704483484333,
+      "within_r_iqr": [
+        0.4638492159208055,
+        0.7288089902217229
+      ],
+      "mae_within": 7.646081924438477,
+      "audit_slope_median": -0.011915481090545486,
+      "frac_subj_faithful": 0.3880597014925373,
+      "frac_segments_audited": 0.36125,
+      "r_slope_vs_tracking": -0.05667863909346092,
+      "r_ci": [
+        -0.3138537680719359,
+        0.2717771529463118
+      ],
+      "n_paired": 67
+    },
+    "xresnet1d101": {
+      "within_r_median": 0.5860340030416364,
+      "within_r_iqr": [
+        0.4013292865501645,
+        0.7013107303301193
+      ],
+      "mae_within": 7.429186820983887,
+      "audit_slope_median": -0.008765316009521233,
+      "frac_subj_faithful": 0.40298507462686567,
+      "frac_segments_audited": 0.36125,
+      "r_slope_vs_tracking": -0.07446780668561616,
+      "r_ci": [
+        -0.387780493552424,
+        0.2522944625830818
+      ],
+      "n_paired": 67
+    },
+    "transformer": {
+      "within_r_median": 0.44129208578159207,
+      "within_r_iqr": [
+        0.2933029791059565,
+        0.6053025284911551
+      ],
+      "mae_within": 7.732769966125488,
+      "audit_slope_median": -0.006596803665160878,
+      "frac_subj_faithful": 0.373134328358209,
+      "frac_segments_audited": 0.36125,
+      "r_slope_vs_tracking": 0.12133841237366717,
+      "r_ci": [
+        -0.11841815038996009,
+        0.3434246988213164
+      ],
+      "n_paired": 67
+    }
+  },
+  "across_arch_r": 0.19460706032948916
+}
