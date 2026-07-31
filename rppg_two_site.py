@@ -64,8 +64,16 @@ def chrom(rgb):
     return xs - (sx / (sy + 1e-9)) * ys
 
 
-def capture(seconds, show=False, cam=0):
-    """Grab mean RGB from a neck ROI and a hand ROI, with real per-frame timestamps."""
+def capture(seconds, show=False, cam=0, pick=True):
+    """Grab mean RGB from a neck ROI and a hand ROI, with real per-frame timestamps.
+
+    ROIs are placed by hand rather than by a face detector. OpenCV 5 removed
+    cv2.CascadeClassifier, and manual placement is in any case more reliable for this task: the
+    neck ROI must sit on bare skin over the carotid, which an automatic face-offset heuristic
+    frequently misses (landing on a collar or a shadow) and which the operator can see at a
+    glance. Fixed ROIs also keep the two regions in a constant position across conditions, which
+    matters because the whole measurement is a comparison between runs.
+    """
     import cv2
     cap = cv2.VideoCapture(cam, cv2.CAP_DSHOW)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -74,39 +82,64 @@ def capture(seconds, show=False, cam=0):
     if not cap.isOpened():
         raise RuntimeError("cannot open camera")
 
-    face = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    neck_roi = hand_roi = None
+    ok, frame = cap.read()
+    if not ok:
+        raise RuntimeError("camera opened but returned no frame")
+    h, w = frame.shape[:2]
+    # sensible defaults: neck just right of centre, hand in the lower-left quadrant
+    neck_roi = (int(0.40 * w), int(0.62 * h), int(0.20 * w), int(0.16 * h))
+    hand_roi = (int(0.05 * w), int(0.55 * h), int(0.30 * w), int(0.35 * h))
+
+    if pick:
+        print("[roi] drag a box over your NECK (bare skin over the carotid), then ENTER.",
+              flush=True)
+        r = cv2.selectROI("select NECK then press ENTER", frame, False, False)
+        if r[2] > 5 and r[3] > 5:
+            neck_roi = tuple(int(v) for v in r)
+        cv2.destroyAllWindows()
+        ok, frame = cap.read()
+        print("[roi] now drag a box over your PALM, then ENTER.", flush=True)
+        r = cv2.selectROI("select HAND then press ENTER", frame, False, False)
+        if r[2] > 5 and r[3] > 5:
+            hand_roi = tuple(int(v) for v in r)
+        cv2.destroyAllWindows()
+    print(f"[roi] neck {neck_roi}  hand {hand_roi}", flush=True)
+
+    def mean_rgb(fr, r):
+        x, y, ww, hh = r
+        p = fr[y:y + hh, x:x + ww]
+        return p[:, :, ::-1].reshape(-1, 3).mean(0) if p.size else np.zeros(3)
+
     N, H, T = [], [], []
     t0 = time.time()
-    print(f"[cap] recording {seconds}s -- hold still, hand at chest height", flush=True)
+    print(f"[cap] recording {seconds}s -- hold still", flush=True)
     while time.time() - t0 < seconds:
         ok, frame = cap.read()
         if not ok:
             continue
-        t = time.time() - t0
-        h, w = frame.shape[:2]
-        if neck_roi is None or len(T) % 30 == 0:
-            g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            f = face.detectMultiScale(g, 1.2, 5, minSize=(80, 80))
-            if len(f):
-                x, y, fw, fh = sorted(f, key=lambda r: -r[2] * r[3])[0]
-                # neck: below the chin, centred on the face
-                ny = min(h - 1, y + fh + int(0.15 * fh))
-                nh = max(10, int(0.35 * fh))
-                neck_roi = (x + fw // 4, ny, fw // 2, min(nh, h - ny))
-                # hand: assume lower-left quadrant, where a raised palm sits
-                hand_roi = (int(0.05 * w), int(0.55 * h), int(0.32 * w), int(0.35 * h))
-        if neck_roi is None:
-            continue
-        def mean_rgb(r):
-            x, y, ww, hh = r
-            p = frame[y:y + hh, x:x + ww]
-            return p[:, :, ::-1].reshape(-1, 3).mean(0) if p.size else np.zeros(3)
-        N.append(mean_rgb(neck_roi)); H.append(mean_rgb(hand_roi)); T.append(t)
+        N.append(mean_rgb(frame, neck_roi))
+        H.append(mean_rgb(frame, hand_roi))
+        T.append(time.time() - t0)
         if show:
-            for r, c in ((neck_roi, (0, 255, 0)), (hand_roi, (0, 128, 255))):
+            for r, c, lab in ((neck_roi, (0, 255, 0), "NECK"),
+                              (hand_roi, (0, 128, 255), "HAND")):
                 x, y, ww, hh = r
                 cv2.rectangle(frame, (x, y), (x + ww, y + hh), c, 2)
+                cv2.putText(frame, lab, (x, max(16, y - 6)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, c, 2)
+            cv2.putText(frame, f"{seconds - (time.time()-t0):4.0f}s left", (10, 26),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            # live pulsatility: std of the recent green trace, which should VISIBLY rise once a
+            # pulse is being picked up. Lets the operator confirm the ROI works before spending
+            # a full recording on a bad placement.
+            if len(N) > 60:
+                for i, (buf, c, yy) in enumerate(((N, (0, 255, 0), 52), (H, (0, 128, 255), 76))):
+                    a = np.array(buf[-60:])[:, 1]
+                    amp = float(np.std(a) / (np.mean(a) + 1e-9) * 1000)
+                    bar = int(min(amp * 12, 180))
+                    cv2.rectangle(frame, (110, yy - 10), (110 + bar, yy - 2), c, -1)
+                    cv2.putText(frame, f"pulse {amp:4.1f}", (10, yy),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, c, 1)
             cv2.imshow("neck (green) / hand (orange) - q to stop", frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
@@ -144,9 +177,11 @@ def main():
     ap.add_argument("--show", action="store_true")
     ap.add_argument("--cam", type=int, default=0)
     ap.add_argument("--tag", default="rest")
+    ap.add_argument("--no-pick", action="store_true",
+                    help="skip the ROI picker and use default boxes")
     args = ap.parse_args()
 
-    N, H, T = capture(args.seconds, args.show, args.cam)
+    N, H, T = capture(args.seconds, args.show, args.cam, pick=not args.no_pick)
     if len(T) < 100:
         print("[err] too few frames"); return
     fs = (len(T) - 1) / (T[-1] - T[0])
