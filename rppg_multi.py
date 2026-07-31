@@ -38,6 +38,7 @@ from pathlib import Path
 
 import numpy as np
 
+import rppg_cam
 import rppg_two_site as R
 
 ROOT = Path(__file__).resolve().parent
@@ -61,6 +62,78 @@ def skin_mask(bgr):
     m = cv2.bitwise_and(m1, cv2.bitwise_or(m2, m3))
     m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
     return cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+
+
+class SkinModel:
+    """Skin mask that learns THIS person under THIS light, seeded from the pose landmarks.
+
+    The fixed-threshold `skin_mask` above rejects skin it should keep. Measured on one skin
+    colour dimmed progressively: identical chrominance (S = 97 throughout) passes at 35%
+    illumination and fails at 25%, purely because of the V >= 50 floor. A forearm in its own
+    shadow therefore drops out of the mask, and the patches sitting on it go to nan. The fixed
+    Cr/Cb box has the same problem across skin tones -- it is centred on one of them.
+
+    Since the tracked points are on the body by construction, they are free labelled samples of
+    the right answer. Take the median and MAD over them and gate relative to that, so the mask
+    follows both skin tone and illumination. Median/MAD rather than mean/sd because some seeds
+    legitimately land on clothing, and a robust centre ignores a minority of them.
+
+    Colour space matters more than the fitting. YCrCb is the obvious choice and it is the wrong
+    one here: scaling RGB by f scales (R - Y) by f, so Cr = 0.713 (R - Y) + 128 collapses toward
+    128 as a pixel darkens. Shadowed skin drifts to neutral, away from the lit skin the model was
+    fitted on, and gets cut -- the exact failure being fixed. Normalised rg-chromaticity,
+    r = R/(R+G+B), is invariant to that scaling because the factor cancels, so the same skin in
+    and out of shadow lands in the same place.
+    """
+
+    def __init__(self, k=5.0, refresh=15, v_floor=12):
+        self.k, self.refresh, self.v_floor = k, refresh, v_floor
+        self.med = self.tol = None
+        self._n = 0
+
+    @staticmethod
+    def _rg(bgr):
+        """Normalised rg-chromaticity, invariant to illumination scale."""
+        f = bgr.astype(np.float32)
+        s = f.sum(2) + 1e-6
+        return f[:, :, 2] / s, f[:, :, 1] / s          # BGR: index 2 = R, 1 = G
+
+    def update(self, bgr, pts, r=9):
+        """Re-fit from seed points. Cheap, so it runs every `refresh` frames, not every frame."""
+        if not pts:
+            return
+        rr, gg = self._rg(bgr)
+        h, w = bgr.shape[:2]
+        samp = []
+        for (x, y) in pts:
+            y0, y1 = max(0, y - r), min(h, y + r)
+            x0, x1 = max(0, x - r), min(w, x + r)
+            if y1 > y0 and x1 > x0:
+                samp.append(np.stack([rr[y0:y1, x0:x1].ravel(), gg[y0:y1, x0:x1].ravel()], 1))
+        if not samp:
+            return
+        samp = np.concatenate(samp, 0)
+        if len(samp) < 50:
+            return
+        med = np.median(samp, 0)
+        mad = np.median(np.abs(samp - med), 0) * 1.4826
+        self.med = med
+        self.tol = np.maximum(self.k * mad, 0.02)      # floor: never collapse to a point
+    def mask(self, bgr, pts=None):
+        import cv2
+        if pts is not None and (self._n % self.refresh == 0 or self.med is None):
+            self.update(bgr, pts)
+        self._n += 1
+        if self.med is None:                           # not seeded yet: fixed fallback
+            return skin_mask(bgr)
+        rr, gg = self._rg(bgr)
+        m = ((np.abs(rr - self.med[0]) < self.tol[0]) &
+             (np.abs(gg - self.med[1]) < self.tol[1])).astype(np.uint8) * 255
+        # Only a true-black floor. Below this, rg-chromaticity is sensor noise, not colour.
+        v = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)[:, :, 2]
+        m = cv2.bitwise_and(m, (v > self.v_floor).astype(np.uint8) * 255)
+        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
+        return cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
 
 
 def patch_boxes(roi, grid=GRID):
@@ -104,10 +177,7 @@ def arrival_ms(phase, ref_phase, f0):
 def capture(seconds, cam=0, show=True):
     """Record mean skin-masked RGB for every patch of every site."""
     import cv2
-    cap = cv2.VideoCapture(cam, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 60)
+    cap = rppg_cam.open_camera(cam, 640, 480, 60)   # platform-aware; CAP_DSHOW is Windows-only
     if not cap.isOpened():
         raise RuntimeError("cannot open camera")
 

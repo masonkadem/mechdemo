@@ -43,6 +43,7 @@ from pathlib import Path
 
 import numpy as np
 
+import rppg_cam
 import rppg_two_site as R
 import rppg_multi as M
 
@@ -121,10 +122,7 @@ def rolling_hr(sig, fs, win_s=8.0):
 def capture_chain(seconds, sites, cam=0, show=True, grid=2):
     """Record skin-masked RGB for a list of named sites, each tiled into a small grid."""
     import cv2
-    cap = cv2.VideoCapture(cam, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 60)
+    cap = rppg_cam.open_camera(cam, 640, 480, 60)   # platform-aware; CAP_DSHOW is Windows-only
     if not cap.isOpened():
         raise RuntimeError("cannot open camera")
 

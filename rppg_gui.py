@@ -34,6 +34,7 @@ from tkinter import ttk, messagebox
 
 import numpy as np
 
+import rppg_cam
 import rppg_two_site as R
 
 ROOT = Path(__file__).resolve().parent
@@ -238,10 +239,7 @@ class App:
 def capture_tracked(seconds, track=True, cam=0, on_status=lambda s: None):
     """Same measurement as rppg_two_site.capture, with optional ROI tracking."""
     import cv2
-    cap = cv2.VideoCapture(cam, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 60)
+    cap = rppg_cam.open_camera(cam, 640, 480, 60)   # platform-aware; CAP_DSHOW is Windows-only
     if not cap.isOpened():
         raise RuntimeError("cannot open camera")
     ok, frame = cap.read()

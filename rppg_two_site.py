@@ -40,6 +40,8 @@ from pathlib import Path
 
 import numpy as np
 
+import rppg_cam
+
 ROOT = Path(__file__).resolve().parent
 BAND = (0.7, 3.0)          # Hz, 42-180 bpm
 
@@ -75,10 +77,7 @@ def capture(seconds, show=False, cam=0, pick=True):
     matters because the whole measurement is a comparison between runs.
     """
     import cv2
-    cap = cv2.VideoCapture(cam, cv2.CAP_DSHOW)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 60)
+    cap = rppg_cam.open_camera(cam, 640, 480, 60)   # platform-aware; CAP_DSHOW is Windows-only
     if not cap.isOpened():
         raise RuntimeError("cannot open camera")
 
@@ -146,7 +145,9 @@ def capture(seconds, show=False, cam=0, pick=True):
     cap.release()
     if show:
         cv2.destroyAllWindows()
-    return np.array(N), np.array(H), np.array(T)
+    # ROIs travel with the traces: the vertical centres are what the rolling-shutter correction
+    # needs, and they are unrecoverable after the fact if not recorded here.
+    return np.array(N), np.array(H), np.array(T), neck_roi, hand_roi
 
 
 def lag_subframe(a, b, fs, max_lag_s=0.25):
@@ -181,7 +182,10 @@ def main():
                     help="skip the ROI picker and use default boxes")
     args = ap.parse_args()
 
-    N, H, T = capture(args.seconds, args.show, args.cam, pick=not args.no_pick)
+    N, H, T, neck_roi, hand_roi = capture(args.seconds, args.show, args.cam,
+                                          pick=not args.no_pick)
+    row_neck = neck_roi[1] + neck_roi[3] / 2.0        # ROI vertical centres, for shutter correction
+    row_hand = hand_roi[1] + hand_roi[3] / 2.0
     if len(T) < 100:
         print("[err] too few frames"); return
     fs = (len(T) - 1) / (T[-1] - T[0])
@@ -221,8 +225,24 @@ def main():
     if not plausible:
         print("      A value outside that range is a processing/ROI artifact, not a transit time.")
 
+    # Rolling shutter: the two ROIs sit at different image rows, so part of this lag is the
+    # sensor sampling them at different times. See rppg_shutter.py.
+    import rppg_shutter
+    lag_corr, artifact = rppg_shutter.correct(lag, row_neck, row_hand)
+    print(f"\n[shut] ROI rows: neck {row_neck:.0f}, hand {row_hand:.0f} "
+          f"(drow {row_hand - row_neck:+.0f})")
+    if np.isnan(artifact):
+        print("[shut] NO CALIBRATION -- run `python rppg_shutter.py` first. Until then part of "
+              "the lag above is sensor row timing, and any hand_up/hand_down shift is "
+              "uninterpretable because moving the hand moves its image row.")
+    else:
+        print(f"[shut] rolling-shutter artifact {artifact:+.1f} ms -> corrected lag "
+              f"{lag_corr:+.1f} ms")
+
     out = {"tag": args.tag, "fps": fs, "n_frames": len(T), "hr_bpm": hr, "snr": snr,
            "lag_ms": lag, "xcorr_peak": peak,
+           "row_neck": float(row_neck), "row_hand": float(row_hand),
+           "shutter_artifact_ms": artifact, "lag_ms_corrected": lag_corr,
            "window_lags": [float(x) for x in lags], "plausible": bool(plausible)}
     p = ROOT / "data" / f"rppg_two_site_{args.tag}.json"
     p.write_text(json.dumps(out, indent=2))
