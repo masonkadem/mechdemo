@@ -173,6 +173,28 @@ already beat-averaged.
 
 ---
 
+## 4c. Dataset triage for the causal arm (2026-07-31)
+
+The phenylephrine result (§4b) means any ICU/OR dataset carries treatment feedback. What we need
+instead is an **exogenous** BP perturbation. Assessed:
+
+| dataset | verdict |
+|---|---|
+| **PTT-PPG** (PhysioNet, 22 subj) | **Best fit.** ECG 500 Hz + 6 PPG channels, sit/walk/run, drug-free. Exercise is exogenous — no feedback loop. |
+| **Mendeley `pz2zzr8vhm`** (148 subj) | **Not usable for the causal arm.** Its own docs: BP was collected *only at rest* (`_1` files), not after exercise. So it is 148 subjects × one resting BP = between-subject only — the axis we already showed carries no transferable signal (result 6). Fine as a drug-free sanity set. No public API; needs manual download. |
+| **Autonomic Aging** (1,100 subj) | **No PPG.** Header shows 2 channels: ECG + NIBP at 1000 Hz. Cannot support PAT or APG tests. Useful only for BP dynamics. |
+| **Graphene tattoo** | URL 404s; not on PhysioNet at the path given. |
+
+**PAT on PTT-PPG is physiologically credible, unlike VitalDB.** Resting record `s4_sit`:
+PAT median **126.0 ms, IQR 114–136**, with genuine beat-to-beat variation (literature 100–250 ms).
+VitalDB gave a near-constant 240/242 ms that is an instrumental offset, not physiology.
+
+Caveat: walk/run records show inflated PAT sd (140–144 ms) from motion artifact, and `s1_run`
+reports HR 83 bpm, which is too low for running — the R-peak detector is dropping beats under
+motion. **Motion-state-aware quality gating is required before using the exercise records.**
+
+---
+
 ## 5. Next steps
 
 **Running:** `run_weekend2.py` — corrected audit, seed variance (gating), CalBased, tracking pairing.
