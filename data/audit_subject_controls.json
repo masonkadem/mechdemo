@@ -1,0 +1,38 @@
+{
+  "positive": {
+    "slope_mmHg_per_ms": 0.03357986184010184,
+    "slope_subj_median": 0.03776707730244609,
+    "slope_subj_lo": 0.026887743621152517,
+    "slope_subj_hi": 0.09508412797463701,
+    "frac_negative": 0.0,
+    "n_subjects": 131,
+    "n_segments_kept": 2203,
+    "frac_segments_kept": 0.36716666666666664,
+    "resp_range_mmHg": 1.5882418765617947,
+    "dpat_range_ms": 37.01677597362377
+  },
+  "negative": {
+    "slope_mmHg_per_ms": 2.0438882263397837e-15,
+    "slope_subj_median": 4.2411545457743117e-17,
+    "slope_subj_lo": -1.6063090311478656e-15,
+    "slope_subj_hi": 2.030142193555639e-15,
+    "frac_negative": 0.45038167938931295,
+    "n_subjects": 131,
+    "n_segments_kept": 2203,
+    "frac_segments_kept": 0.36716666666666664,
+    "resp_range_mmHg": 0.0,
+    "dpat_range_ms": 37.01677597362377
+  },
+  "amplitude": {
+    "slope_mmHg_per_ms": 0.003764027939144971,
+    "slope_subj_median": 5.199308281534303e-16,
+    "slope_subj_lo": -1.827132493211432e-15,
+    "slope_subj_hi": 0.0006185244909435505,
+    "frac_negative": 0.3435114503816794,
+    "n_subjects": 131,
+    "n_segments_kept": 2203,
+    "frac_segments_kept": 0.36716666666666664,
+    "resp_range_mmHg": 0.0038322869095603032,
+    "dpat_range_ms": 37.01677597362377
+  }
+}
