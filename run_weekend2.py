@@ -46,13 +46,20 @@ def save():
     OUT.write_text(json.dumps(RESULTS, indent=2, default=float))
 
 
-def stage(name):
+def stage(name, expect=None):
+    """expect: how many entries a COMPLETE stage holds. Without it, a stage that checkpointed
+    after one model looks 'done' and the remaining models are silently skipped -- which is
+    exactly what happened to stage 1 on the first run."""
     def deco(fn):
         def wrapped(*a, **k):
-            if name in RESULTS and "error" not in RESULTS[name] and not k.pop("redo", False):
-                print(f"[skip] {name} already done", flush=True)
-                return
-            k.pop("redo", None)
+            redo = k.pop("redo", False)
+            done = RESULTS.get(name)
+            if done and "error" not in done and not redo:
+                have = len([x for x in done if not x.startswith("var_")])
+                if expect is None or have >= expect:
+                    print(f"[skip] {name} already done ({have} entries)", flush=True)
+                    return
+                print(f"[resume] {name}: {have}/{expect} entries present, continuing", flush=True)
             t0 = time.time()
             print(f"\n{'='*72}\n[w2] STAGE {name}\n{'='*72}", flush=True)
             try:
@@ -84,14 +91,16 @@ def load_deep(mk, tag="_ecgppg_full"):
 
 
 # ------------------------------------------------------------------ stage 1
-@stage("1_corrected_audit")
+@stage("1_corrected_audit", expect=len(ARCHS))
 def corrected_audit():
     """Re-run every architecture through the VALIDATED audit. The published slopes come from
     the NaN-imputing version, whose bias is toward zero -- so PAT dependence should get
     STRONGER here. Reports per-subject slopes, so faithfulness has an error bar."""
     X, Y, G, fs = test_data()
-    out = {}
+    out = RESULTS.get("1_corrected_audit", {}) or {}
     for mk in ARCHS:
+        if mk in out:
+            print(f"  {mk:14s} cached, skipping", flush=True); continue
         try:
             fn = load_deep(mk)
         except Exception as e:
@@ -159,15 +168,17 @@ def seed_variance(seeds=(0, 1, 2, 3, 4), epochs=30, train_n=60000):
 
 
 # ------------------------------------------------------------------ stage 3
-@stage("3_calbased")
+@stage("3_calbased", expect=len(ARCHS))
 def calbased(per_subject=150):
     """Within-subject tracking is essentially what calibrated deployment measures, so report
     the calibrated numbers properly: subtract each subject's own mean (an offset calibration,
     the standard CalBased protocol) and re-score. Compared against the mean-predictor floor,
     which is the baseline the cross-dataset OOD work failed to beat."""
     X, Y, G, fs = test_data(per_subject)
-    out = {}
+    out = RESULTS.get("3_calbased", {}) or {}
     for mk in ARCHS:
+        if mk in out:
+            print(f"  {mk:14s} cached, skipping", flush=True); continue
         try:
             fn = load_deep(mk)
         except Exception as e:
@@ -194,7 +205,7 @@ def calbased(per_subject=150):
 
 
 # ------------------------------------------------------------------ stage 4
-@stage("4_tracking_vs_faithfulness")
+@stage("4_tracking_vs_faithfulness", expect=len(ARCHS))
 def tracking_vs_faithfulness():
     """The headline test, at n=subjects rather than n=5 architectures. Pairs each subject's
     audit slope with that subject's tracking correlation and bootstraps the correlation.
