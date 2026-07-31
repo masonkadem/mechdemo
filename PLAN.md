@@ -122,6 +122,57 @@ constant offset and re-run the audit relative to it.
 
 ---
 
+## 4b. Pharmacodynamic audit — first results (2026-07-31)
+
+**Stage 1 of `run_weekend2` is complete and is a clean null.** All five architectures, validated
+audit, per-subject CIs:
+
+| arch | slope | 95% CI | subjects faithful |
+|---|---|---|---|
+| lenet1d | −0.0085 | [−0.0494, +0.0346] | 37% |
+| inception1d | −0.0033 | [−0.0639, +0.0550] | 47% |
+| xresnet1d50 | −0.0076 | [−0.0899, +0.0606] | 41% |
+| xresnet1d101 | −0.0049 | [−0.1069, +0.0600] | 45% |
+| transformer | −0.0042 | [−0.0387, +0.0282] | 41% |
+
+**Every CI spans zero and every faithful-fraction is near the 50% coin flip.** There is no
+faithful model in our set and no meaningful ranking among them.
+
+**Seed variance is small, but checkpoints disagree with retrains.** Five fresh lenet1d seeds
+give slope +0.0040 to +0.0117 (sd 0.0031) — consistently *positive*, i.e. faithful — while the
+stored checkpoint gives −0.0085. Consistent within a training run, opposite between runs. So the
+earlier −8.0/+18.9 chaos was the broken audit, not seeds; but something other than seed differs
+between checkpoint and retrain (epochs, data subset) and **must be resolved before any slope is
+quoted**.
+
+**The phenylephrine audit is confounded by closed-loop treatment.** Per-case MAP change after a
+phenylephrine step-up is **+0.85 mmHg, 60% of cases positive, Wilcoxon p=0.092** (30 cases, 466
+events) — for a drug that should raise BP 15–30 mmHg. The reason is visible in the timing:
+
+| | MAP |
+|---|---|
+| case baseline | 73.0 mmHg |
+| just **before** drug step | 72.0 mmHg (−1.0 vs baseline) |
+| after drug step | 77.1 mmHg (+4.1 vs baseline) |
+
+Clinicians give vasopressors *because* MAP has fallen, and titrate to a target. **Treatment is a
+function of the outcome**, so a naive before/after comparison cancels most of the true effect.
+This is closed-loop confounding, not a weak drug.
+
+Two consequences:
+- Any model that uses drug state as a *feature* is learning "drug on ⇒ patient was hypotensive",
+  which is reverse causation and will invert out of distribution. This argues **against** adding
+  drugs to the LightGBM arm.
+- The pharmacodynamic audit needs a design that survives feedback: dose–response *within* the
+  treated window, marginal structural models / inverse-probability weighting, or the
+  bolus-onset transient (30–90 s) before the clinician reacts.
+
+En route, one measurement bug worth keeping: sampling the 500 Hz `SNUADC/ART` waveform at 1 Hz
+aliases systole/diastole at random (sd 19.9 mmHg). Use `Solar8000/ART_MBP` (sd 7.9), which is
+already beat-averaged.
+
+---
+
 ## 5. Next steps
 
 **Running:** `run_weekend2.py` — corrected audit, seed variance (gating), CalBased, tracking pairing.
