@@ -50,6 +50,16 @@ Kept deliberately, so they are not re-derived or accidentally re-claimed.
   not an underpowered one. Faithfulness and capability are unrelated here, not merely decoupled.
 - **"~2000 VitalDB cases have cardiac output."** My substring match caught `Primus/CO2`
   (capnography). Real CO is EV1000/Vigileo, ~325–508 cases.
+- **"PEP is 63% of PAT"** and its corrected successor **"33%"**. Both withdrawn. The first came
+  from a foot detector firing twice per beat (146 feet for 74 R peaks); the second from data
+  whose absolute timing is not trustworthy — see below.
+- **"Absolute PEP/PTT is recoverable from VitalDB."** It is not. On case 1: R→ART foot 242 ms,
+  R→PPG foot 742 ms, so the implied radial→finger transit is 500 ms against an RR of 842 ms.
+  A real radial→finger transit is ~20–50 ms. The values are also near-constant beat to beat
+  (240, 240, 238, 242, 244…) where real PAT varies by tens of ms. **The ART and PPG channels
+  carry independent device latencies and are not mutually time-synchronized**, and a fixed
+  offset is indistinguishable from a real transit time. Within-subject *changes* remain valid
+  (a constant offset cancels in differences); absolute intervals do not.
 
 ---
 
@@ -98,6 +108,17 @@ had PulseDB-scale waveforms joined to infusion records — VitalDB has both, nat
 3. Offset calibration is **partly replaceable** by drug/BIS/SV covariates (measured in stage 3).
 4. If (1)–(3) all fail, the models are simply unfaithful and (a) is the answer — also publishable,
    and the audit method still stands.
+
+**Constraint discovered while building the loader (§2, last entry).** VitalDB's ART and PPG
+channels are not mutually time-synchronized, so *absolute* PEP/PTT cannot be measured and
+predictions must be phrased as **within-subject changes**, where the fixed offset cancels:
+"does the arrival interval *shift* after ephedrine?", never "what is PEP?".
+
+**This may be an upstream finding in its own right.** If channel pairs carry an arbitrary fixed
+offset, then PulseDB's PAT — and therefore the x-axis of our entire roll-audit — is measured
+against an arbitrary zero. That is a candidate cause of the observed anti-faithfulness that has
+nothing to do with the models, and it is worth testing directly: estimate the per-dataset
+constant offset and re-run the audit relative to it.
 
 ---
 
