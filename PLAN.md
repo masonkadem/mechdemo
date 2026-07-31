@@ -189,9 +189,17 @@ instead is an **exogenous** BP perturbation. Assessed:
 PAT median **126.0 ms, IQR 114–136**, with genuine beat-to-beat variation (literature 100–250 ms).
 VitalDB gave a near-constant 240/242 ms that is an instrumental offset, not physiology.
 
-Caveat: walk/run records show inflated PAT sd (140–144 ms) from motion artifact, and `s1_run`
-reports HR 83 bpm, which is too low for running — the R-peak detector is dropping beats under
-motion. **Motion-state-aware quality gating is required before using the exercise records.**
+Caveat: walk/run records show inflated PAT sd (140–144 ms) from motion artifact, so PPG-foot
+quality gating is still needed on those records.
+
+**Correction.** I first read `s1_run`'s HR of 83 bpm as the R-peak detector dropping beats under
+motion. It is not: two independent detectors agree (RR 722 vs 709 ms) and **0%** of RR intervals
+are ~2× the median, which is what missed beats would produce. The records are
+**rest-then-exercise** — HR sits at 80–86 bpm for the first 7 minutes of `s1_run` and rises to
+113 bpm only at t=420–480 s. So the exercise window must be **located in time** (via HR ramp or
+the on-board accelerometer), not assumed to span the record. This is favourable: each record
+contains a within-subject rest→exercise transition, which is precisely the exogenous
+perturbation the causal arm needs.
 
 ---
 
