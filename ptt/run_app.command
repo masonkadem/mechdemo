@@ -2,7 +2,9 @@
 # Double-click in Finder to open the desktop app.
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 
-PY=".venv/bin/python"
+# The virtualenv lives at the repo root, one level up from this self-contained project.
+PY="../.venv/bin/python"
+[ -x "$PY" ] || PY=".venv/bin/python"
 [ -x "$PY" ] || PY="python3"
 
 MODEL="models/pose_landmarker.task"

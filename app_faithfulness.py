@@ -393,9 +393,15 @@ with tab_inst:
    multi-site video PPG, where transit time is *validated by construction* rather than assumed.
 """)
 
-    _D = Path(__file__).resolve().parent / "data"
-    _F = Path(__file__).resolve().parent / "figures"
+    # The camera-PTT instrument is a self-contained project under ptt/, with its own data and
+    # figures. This tab is the only place the faithfulness app reaches into it, so the path is
+    # resolved here rather than at module scope.
+    _PTT = Path(__file__).resolve().parent / "ptt"
+    _D = _PTT / "data"
+    _F = _PTT / "figures"
     FIGS = _F
+    if str(_PTT) not in sys.path:
+        sys.path.insert(0, str(_PTT))
 
     st.subheader("Four instruments, one conclusion about arrival time")
     st.markdown("""
@@ -595,4 +601,5 @@ So the measurement carries its own falsification test. Note the honest status: t
     with st.expander("Record with the webcam instead (opens a separate window)"):
         st.markdown("Live capture runs in an OpenCV window — Streamlit can host neither the ROI "
                     "picker nor a usable frame rate through the browser.")
-        st.code("python rppg_pose.py --seconds 60 --tag rest --stages", language="bash")
+        st.code("cd ptt && python rppg_pose.py --seconds 60 --tag rest --stages\n"
+                "# or double-click ptt/run_app.command for the desktop console", language="bash")

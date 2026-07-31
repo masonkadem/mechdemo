@@ -55,5 +55,5 @@ data/_*.npz
 data/_*.pkl
 data/_*.json
 
-# pose model: 5.5 MB, fetched on first run by run_rppg.command
-models/*.task
+# pose model: 5.5 MB, fetched on first run by ptt/run_app.command
+ptt/models/*.task
