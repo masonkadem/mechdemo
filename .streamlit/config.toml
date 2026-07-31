@@ -1,0 +1,16 @@
+# Streamlit configuration.
+#
+# maxUploadSize is raised to 400 MB so phone clips can be uploaded to a deployed instance. Sizing:
+# a 1080p240 clip runs about 12.5 MB/s, so 400 MB holds roughly 30 s -- which is ample, since
+# 30 s at 240 fps is already 7,200 frames. Users are told to trim before uploading rather than
+# discovering the cap as a failure.
+#
+# Note this is an upper bound, not a target: uploads are held in memory during transfer, so a
+# deployed instance needs headroom above this value.
+[server]
+maxUploadSize = 400
+maxMessageSize = 400
+
+[theme]
+base = "light"
+primaryColor = "#2f4b7c"

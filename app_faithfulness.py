@@ -1,5 +1,5 @@
 """Mechanistic faithfulness demo.  streamlit run app_faithfulness.py"""
-import os, json, sys
+import os, json, sys, tempfile
 from pathlib import Path
 import numpy as np
 import torch, torch.nn as nn
@@ -133,8 +133,9 @@ def real_layer_features(net, X, depth, bs=512):
 # ── UI ───────────────────────────────────────────────────────────────────────
 st.set_page_config(page_title="BP waveform faithfulness", layout="wide")
 st.title("Accuracy vs faithfulness in blood-pressure estimation from waveforms")
-tab_syn, tab_real, tab_cap = st.tabs(
-    ["Synthetic sandbox", "Real waveforms (VitalDB)", "Faithful to what?"])
+tab_syn, tab_real, tab_cap, tab_inst = st.tabs(
+    ["Synthetic sandbox", "Real waveforms (VitalDB)", "Faithful to what?",
+     "Back to instrumentation"])
 
 # ── SYNTHETIC ─────────────────────────────────────────────────────────────────
 with tab_syn:
@@ -374,3 +375,224 @@ with tab_cap:
                        + f". Control floor {ctrl:.2f}. *Dependence* = does the output move with the cue "
                          "(any direction); *physiological direction* = the physiologically correct way "
                          "(0.5 = chance).")
+
+
+# ── BACK TO INSTRUMENTATION ───────────────────────────────────────────────────
+with tab_inst:
+    st.markdown("""
+### The argument
+
+1. **Deep BP models are not mechanistically faithful.** Across five architectures the causal
+   roll-audit returns slopes whose 95% CIs all span zero, and 37–47% of subjects "faithful" —
+   indistinguishable from a coin flip.
+2. **The audit is not at fault.** It is validated end to end: on synthetic *waveforms* where the
+   PTT→BP pathway is true by construction, audit slope tracks the ground-truth dial at
+   r = −0.996, recovering −0.185 mmHg/ms against an injected −0.22.
+3. **Arrival time is barely measurable in these datasets.** Four independent instruments agree.
+4. **So the bottleneck is instrumentation, not architecture** — and a route forward is dense
+   multi-site video PPG, where transit time is *validated by construction* rather than assumed.
+""")
+
+    _D = Path(__file__).resolve().parent / "data"
+    _F = Path(__file__).resolve().parent / "figures"
+    FIGS = _F
+
+    st.subheader("Four instruments, one conclusion about arrival time")
+    st.markdown("""
+| instrument | result |
+|---|---|
+| causal roll-audit | every architecture's CI spans zero |
+| measurability | PAT recoverable on only **44%** of PulseDB segments |
+| channel synchronisation | VitalDB PAT near-constant 240/242 ms — an instrumental offset, not physiology |
+| calibration value | the PAT feature family is the **worst** at every anchor count |
+
+**Physiological reading.** Moens–Korteweg governs the *aortic* pulse. What these datasets record
+is `R-peak → finger`, which is pre-ejection period (cardiac, not vascular) plus peripheral transit
+through neurally-toned muscular arteries. The law applies to a quantity the sensors do not capture.
+""")
+
+    _fig = _F / "fig_summary.png"
+    if _fig.exists():
+        st.image(str(_fig), caption="a  audit validated on raw waveforms.  b  no trained model is "
+                 "faithful.  c  PAT buys no calibration; demographics halve it.  "
+                 "d  cross-dataset transfer sits at the mean-predictor floor.")
+
+    st.divider()
+    st.subheader("The instrumentation route: dense multi-site video PPG")
+    st.markdown("""
+A camera samples **many** skin sites at once. Pose tracking places points along the arterial path
+— neck (carotid) → shoulder → upper arm → forearm → hand — so every point has a known anatomical
+distance from the neck.
+
+That distance axis is the validation, and it is what a two-site measurement can never provide:
+
+- a fixed processing or channel delay produces a **constant** offset;
+- true propagation produces arrival time that **grows linearly with distance**;
+- the slope is **pulse wave velocity**, which must land in the physiological **4–12 m/s** range
+  for the upper limb.
+
+So the measurement carries its own falsification test. Note the honest status: this validates a
+*transit time*, and no BP estimate is claimed from it yet.
+""")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("sampling points", "32", help="along neck → shoulder → arm → forearm → hand")
+    c2.metric("webcam frame quantum", "33 ms", delta="too coarse", delta_color="inverse",
+              help="arm transit is ~10–20 ms, i.e. under one frame at 30 fps")
+    c3.metric("phone at 240 fps", "4.2 ms", delta="resolvable", help="transit spans several frames")
+
+    st.info("Live webcam capture gives reliable **heart rate** but not reliable **transit time**. "
+            "For timing, record 240 fps slow-motion on a phone and analyse it below.")
+
+    with st.expander("Recordings so far"):
+        _rows = []
+        for _f in sorted(_D.glob("rppg_*_*.json")):
+            try:
+                _j = json.loads(_f.read_text())
+            except Exception:
+                continue
+            _rows.append({"recording": _f.stem.replace("rppg_", ""),
+                          "HR (bpm)": _j.get("consensus_hr") or _j.get("hr_bpm"),
+                          "fps": _j.get("fps_effective") or _j.get("fps"),
+                          "SNR": _j.get("snr"),
+                          "lag (ms)": _j.get("lag_ms"),
+                          "PWV (m/s)": _j.get("pwv_m_s")})
+        if _rows:
+            st.dataframe(_rows, use_container_width=True)
+            st.caption("Heart rate reproduces to within 0.2 bpm across separate webcam "
+                       "recordings (67.6 / 67.7 / 67.5), which validates the pulse extraction. "
+                       "The lag columns are not yet usable: per-window scatter of 44–119 ms "
+                       "exceeds the 20–50 ms effect, so timing awaits a high-frame-rate clip.")
+        else:
+            st.caption("No recordings yet.")
+
+    st.divider()
+    st.subheader("Analyse a video")
+
+    # Two ingest paths. Upload is what a deployed instance needs, since the server cannot see the
+    # user's filesystem. A local path avoids pushing a large file through the browser when the app
+    # runs on the same machine as the clip. The cap is set in .streamlit/config.toml.
+    MAX_UPLOAD_MB = 400
+    src = st.radio("Video source", ["Upload", "Local path"], horizontal=True, key="inst_src",
+                   help="Upload when using a deployed app. A local path avoids copying the file "
+                        "when the app runs on your own machine.")
+
+    video_path = None
+    if src == "Upload":
+        up = st.file_uploader(f"Video file (max {MAX_UPLOAD_MB} MB)",
+                              type=["mp4", "mov", "m4v", "avi", "mkv"], key="inst_up")
+        st.caption(f"A 1080p240 clip runs about 12.5 MB/s, so {MAX_UPLOAD_MB} MB holds roughly "
+                   "30 s — already 7,200 frames. Trim on the phone before uploading if needed.")
+        if up is not None:
+            size_mb = up.size / 1e6
+            if size_mb > MAX_UPLOAD_MB:
+                st.error(f"{size_mb:.0f} MB exceeds the {MAX_UPLOAD_MB} MB limit. Record or trim "
+                         "to 20–30 s, which is plenty at 240 fps.")
+            else:
+                # OpenCV needs a seekable path, not a byte buffer, so persist to a temp file.
+                # Re-use it across reruns when the size already matches.
+                cache = Path(tempfile.gettempdir()) / "mechdemo_uploads"
+                cache.mkdir(exist_ok=True)
+                cand = cache / up.name
+                if not cand.exists() or cand.stat().st_size != up.size:
+                    with st.spinner(f"Receiving {size_mb:.0f} MB …"):
+                        cand.write_bytes(up.getbuffer())
+                video_path = cand
+    else:
+        raw = st.text_input("Video path", "", key="inst_video",
+                            placeholder=r"C:\Users\you\Videos\clip.mov")
+        if raw:
+            cand = Path(raw.strip().strip('"').strip("'"))
+            if cand.exists():
+                video_path = cand
+            else:
+                st.error(f"Not found: {cand}")
+
+    col1, col2, col3 = st.columns(3)
+    tag = col1.text_input("Tag", "phone_rest", key="inst_tag")
+    scale = col2.slider("Downscale", 0.25, 1.0, 0.5, 0.25, key="inst_scale",
+                        help="Pose detection and patch colour means are insensitive to "
+                             "resolution, so downscaling mostly buys speed.")
+    max_frames = col3.number_input("Max frames (0 = all)", 0, 200000, 0, 500, key="inst_maxf")
+
+    if video_path is not None:
+        import rppg_video as rv
+        try:
+            info = rv.probe(video_path)
+        except Exception as exc:
+            st.error(f"Could not read the video: {exc}")
+        else:
+            quantum_ms = 1000.0 / max(info["fps"], 1e-9)
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Resolution", f"{info['w']}×{info['h']}")
+            m2.metric("Frame rate", f"{info['fps']:.0f} fps")
+            m3.metric("Frame quantum", f"{quantum_ms:.1f} ms")
+            m4.metric("Duration", f"{info['duration_s']:.1f} s")
+
+            if info["fps"] < 120:
+                st.warning(f"At {info['fps']:.0f} fps a frame spans {quantum_ms:.0f} ms, while arm "
+                           "transit is roughly 10–20 ms. Timing will be interpolation-limited; "
+                           "heart rate remains reliable.")
+            else:
+                st.success(f"At {info['fps']:.0f} fps arm transit spans about "
+                           f"{15 / quantum_ms:.0f} frames, which is enough to resolve timing.")
+
+            if st.button("Analyse", type="primary", key="inst_go"):
+                bar = st.progress(0.0, "Decoding and pose-tracking …")
+                try:
+                    acc, times, fps, dist, _seg = rv.extract(
+                        video_path, int(max_frames), scale,
+                        progress=lambda f: bar.progress(min(f, 1.0)))
+                    bar.progress(1.0, "Analysing …")
+                    res = rv.analyse(acc, times, fps, dist, tag, make_stages=True)
+                except Exception as exc:
+                    bar.empty()
+                    st.error(f"Analysis failed: {exc}")
+                    st.caption("Most often the person is not fully visible. The neck and the "
+                               "whole arm down to the hand must be in frame throughout.")
+                else:
+                    bar.empty()
+                    r1, r2, r3 = st.columns(3)
+                    r1.metric("Consensus HR", f"{res['consensus_hr']:.1f} bpm")
+                    r2.metric("Points accepted", f"{res['n_accepted']}/{res['n_points']}")
+                    r3.metric("Effective rate", f"{res['fps_effective']:.0f} fps")
+
+                    if "pwv_m_s" in res:
+                        st.markdown("**Arrival time against anatomical distance**")
+                        dd = np.array(res["distances_cm"])
+                        lg = np.array(res["lags_ms"])
+                        fig_pwv, ax_pwv = plt.subplots(figsize=(6, 3.2))
+                        ax_pwv.scatter(dd, lg, s=24, color=NAVY)
+                        xs = np.linspace(dd.min(), dd.max(), 10)
+                        ax_pwv.plot(xs, np.polyval(np.polyfit(dd, lg, 1), xs), color=RED)
+                        ax_pwv.set_xlabel("distance from reference point (cm)")
+                        ax_pwv.set_ylabel("arrival lag (ms)")
+                        fig_pwv.tight_layout()
+                        st.pyplot(fig_pwv)
+                        st.metric("Implied PWV", f"{res['pwv_m_s']:.1f} m/s",
+                                  delta=f"r = {res['r']:+.2f}")
+                        if res.get("pwv_plausible"):
+                            st.success("Inside the 4–12 m/s upper-limb range and monotonic in "
+                                       "distance. Arrival time growing with distance can only be "
+                                       "propagation, not a fixed processing offset.")
+                        else:
+                            st.error("Outside 4–12 m/s, or weakly correlated with distance, so "
+                                     "these lags are artifact-dominated rather than transit.")
+                    else:
+                        st.info("Too few points passed the physiological gate to fit a "
+                                "distance–arrival relationship. Better lighting and a fully "
+                                "visible arm are the usual fixes.")
+
+                    stages_png = FIGS / f"fig_rppg_stages_{tag}.png"
+                    if stages_png.exists():
+                        st.markdown("**Signal stages**")
+                        st.image(str(stages_png))
+                        st.caption("Raw skin RGB → detrended → chrominance → band-passed. The "
+                                   "first three seconds are discarded because camera "
+                                   "auto-exposure and white balance settle over that window.")
+
+
+    with st.expander("Record with the webcam instead (opens a separate window)"):
+        st.markdown("Live capture runs in an OpenCV window — Streamlit can host neither the ROI "
+                    "picker nor a usable frame rate through the browser.")
+        st.code("python rppg_pose.py --seconds 60 --tag rest --stages", language="bash")

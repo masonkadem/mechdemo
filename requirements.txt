@@ -4,6 +4,14 @@ numpy>=1.24
 scipy>=1.10
 scikit-learn>=1.3
 matplotlib>=3.7
+
+# video rPPG tab: frame decoding, skin masking, pose-tracked sampling points.
+# mediapipe >=1.0 exposes the Tasks API (mp.tasks.vision) and needs the pose landmarker model
+# in models/; the legacy mp.solutions API it replaced is not used. opencv-python 5 dropped
+# cv2.CascadeClassifier, so ROI placement is manual or pose-driven rather than cascade-based.
+opencv-python>=4.8
+mediapipe>=0.10
+
 # for running the notebooks
 jupyter>=1.0
 ipykernel>=6.0
