@@ -180,7 +180,7 @@ instead is an **exogenous** BP perturbation. Assessed:
 
 | dataset | verdict |
 |---|---|
-| **PTT-PPG** (PhysioNet, 22 subj) | **Best fit.** ECG 500 Hz + 6 PPG channels, sit/walk/run, drug-free. Exercise is exogenous — no feedback loop. |
+| **PTT-PPG** (PhysioNet, 22 subj) | **Clean signals, but BP labels do not capture the exercise.** See §4d — cuff readings are taken at activity boundaries with the subject stationary, so across-activity BP spread is 1.6 mmHg against 14.7 between subjects. |
 | **Mendeley `pz2zzr8vhm`** (148 subj) | **Not usable for the causal arm.** Its own docs: BP was collected *only at rest* (`_1` files), not after exercise. So it is 148 subjects × one resting BP = between-subject only — the axis we already showed carries no transferable signal (result 6). Fine as a drug-free sanity set. No public API; needs manual download. |
 | **Autonomic Aging** (1,100 subj) | **No PPG.** Header shows 2 channels: ECG + NIBP at 1000 Hz. Cannot support PAT or APG tests. Useful only for BP dynamics. |
 | **Graphene tattoo** | URL 404s; not on PhysioNet at the path given. |
@@ -200,6 +200,43 @@ are ~2× the median, which is what missed beats would produce. The records are
 the on-board accelerometer), not assumed to span the record. This is favourable: each record
 contains a within-subject rest→exercise transition, which is precisely the exogenous
 perturbation the causal arm needs.
+
+---
+
+## 4d. Governing-law test on PTT-PPG — null, but uninformative (2026-07-31)
+
+`pttppg_law.py`, 32 records / 14 subjects. Both analyses null:
+
+| analysis | slope | r | p |
+|---|---|---|---|
+| within-record (start → end) | +0.001 mmHg/ms | +0.004 | 0.98 |
+| across-activity, subject-centred | +0.008 mmHg/ms | +0.081 | 0.67 |
+
+**This is not evidence against Moens–Korteweg. The perturbation is absent from the labels.**
+
+| activity | n | PAT (ms) | SBP | HR |
+|---|---|---|---|---|
+| sit | 9 | 148.0 | 117.0 | 69 |
+| walk | 12 | 171.0 | 120.8 | 74 |
+| run | 11 | 132.0 | 120.5 | 75 |
+
+- BP spread **across activities: 1.6 mmHg**; **between subjects: 14.7 mmHg** — 9× larger.
+- HR goes **69 → 75 bpm** from sitting to running. A running protocol should reach 120–160.
+
+The cause is the measurement protocol: BP is taken with an OMRON arm cuff at activity
+*boundaries*, which requires the subject to be stationary and largely recovered. The labels
+therefore describe the resting state before and after exercise, not the exercised state. A
+1.6 mmHg contrast is smaller than cuff error (±5 mmHg), so **we did not test the law and find it
+absent — we lacked the BP range to test it at all.**
+
+Implication: the exogenous-perturbation idea is right, but it needs a dataset with BP measured
+*during* the perturbation (beat-to-beat finger cuff, e.g. Finapres/Portapres, or invasive), not
+cuff readings bracketing it. ErgoBP (invasive BP during ergometer exercise) is the kind of source
+that would work; PTT-PPG is not.
+
+Minor: resting PAT is reported as 148 ms here (whole-record median) versus 126 ms quoted earlier
+from a mid-record slice. Both are physiological; the whole-record convention is the one used from
+here on.
 
 ---
 
