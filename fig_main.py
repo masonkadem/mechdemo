@@ -195,20 +195,20 @@ def main():
     # cannot order the rows. What this table shows instead is size against accuracy on the two
     # PulseDB protocols.
     #
-    # The final row is not decoration. MIMIC's DBP mean sits 4.5 mmHg below the training
-    # distribution, so a constant predictor scores 10.33 -- BETTER than every model here. The
-    # PAT-only arm reaches 11.09 by having the flattest predictions in the set (sd 4.45 against
-    # 5.88) and the WORST within-subject correlation with true BP (0.032 against 0.15-0.17). It
-    # wins the column by predicting nearly a constant, not by using arrival time well. Without
-    # this row the OOD column reads as a ranking; with it, it reads as a warning.
+    # NOTE for anyone reading the OOD column: MIMIC's DBP mean sits 4.5 mmHg below training, so
+    # a constant predictor scores 10.33 there -- better than every model in this table. PAT-only
+    # reaches 11.09 by having the flattest predictions (sd 4.45 against 5.88) and the worst
+    # within-subject correlation with true BP (0.032 against 0.15-0.17). The column ranks
+    # flatness under distribution shift, not mechanism. Kept out of the figure at the author's
+    # request; it belongs in the caption.
     erows2 = [[r[0], r[1], r[2], r[3]] for r in erows]
     erows2 += [
         ["LightGBM (83 feat)", "50k lv", "8.10", "14.65"],
         ["LightGBM + demographics", "50k lv", "8.28", "16.76"],
-        ["LightGBM single tree", "32 lv", "8.84", "13.13"],
+        ["LightGBM single tree", "64 lv", "8.92", "12.24"],
         ["LightGBM PAT only", "6 feat", "8.47", "11.09"],
         ["Faithful: PAT + morphology", "4.5k lv", "8.63", "15.74"],
-        ["Predict the training mean", "0", "9.43", "10.33"],
+        ["LightGBM 12 feat, 20 trees", "620 lv", "8.69", "15.73"],
     ]
     table(fig.add_subplot(gs[1, 1]),
           ["Model", "size", "ID", "OOD"],

@@ -51,8 +51,7 @@ def main():
         ("transformer", GREY, "--", "Transformer (107k parameters)"),
     ]
 
-    fig, (ax, bx) = plt.subplots(1, 2, figsize=(11.6, 4.0),
-                                 gridspec_kw={"width_ratios": [1.15, 1], "wspace": 0.62})
+    fig, ax = plt.subplots(figsize=(6.4, 4.2))
 
     target = None
     for key, col, ls, lab in show:
@@ -69,37 +68,24 @@ def main():
                 color=RED, ha="right", va="top")
     ax.set_xlabel("k  =  cuff readings collected from this person", fontsize=9)
     ax.set_ylabel("DBP MAE on held-out segments (mmHg)", fontsize=9)
-    ax.set_title("a   calibration burden", loc="left", fontsize=10, fontweight="bold")
     ax.legend(fontsize=7.6, frameon=False, loc="upper right")
     ax.text(0.02, 0.04, "k = 0 is calibration-free", transform=ax.transAxes,
             fontsize=7.5, color=GREY)
 
-    # panel b: anchors needed to reach the best deep net
     rows = []
     for key, col, ls, lab in show:
         if key not in curves or not target:
             continue
         c = curves[key]
         hit = next((k for k in KS if c.get(k, 9e9) <= target), None)
-        rows.append((lab, hit if hit is not None else 25, col, hit is not None))
-    rows.sort(key=lambda r: r[1])
-    y = np.arange(len(rows))
-    bx.barh(y, [r[1] for r in rows], color=[r[2] for r in rows], height=0.6)
-    for i, (lab, v, col, reached) in enumerate(rows):
-        bx.text(v + 0.4, i, str(v) if reached else ">20", va="center", fontsize=8.5,
-                fontweight="bold")
-    bx.set_yticks(y, [r[0] for r in rows], fontsize=7.6)
-    bx.set_xlabel(f"cuff readings needed to reach {target:.2f} mmHg", fontsize=9)
-    bx.set_xlim(0, 27)
-    bx.set_title("b   fewer readings for the same accuracy", loc="left", fontsize=10,
-                 fontweight="bold")
+        rows.append((lab, hit, col))
 
     for ext in ("png", "pdf"):
         fig.savefig(ROOT / "figures" / f"fig_calibration.{ext}", dpi=200, bbox_inches="tight")
     plt.close(fig)
     print("[fig] figures/fig_calibration.png")
-    for lab, v, _, reached in rows:
-        print(f"  {lab:44s} {v if reached else '>20'}")
+    for lab, v, _ in rows:
+        print(f"  {lab:44s} {v if v is not None else '>20'}")
 
 
 if __name__ == "__main__":
