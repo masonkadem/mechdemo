@@ -104,7 +104,10 @@ class SkinModel:
         """
         self.thr, self.refresh = thr, refresh
         self.v_floor, self.v_ceil = v_floor, v_ceil
-        self.rad_floor = 4.0                          # below this a pixel is neutral, not skin
+        # Radius floor as a FRACTION of brightness plus a small absolute minimum, rather than a
+        # fixed value: see mask(). rad_frac is well under the ~0.13 that lit skin sits at, so it
+        # tracks skin down into shadow without admitting neutrals.
+        self.rad_frac, self.rad_min = 0.035, 1.2
         self.ang_mu = self.ang_tol = None
         self.mu = self.inv = None
         self.med = self.tol = None
@@ -179,7 +182,14 @@ class SkinModel:
         ang = np.degrees(np.arctan2(dcr, dcb))
         rad = np.hypot(dcr, dcb)
         da = np.abs((ang - self.ang_mu + 180.0) % 360.0 - 180.0)
-        m = ((da < self.ang_tol) & (rad > self.rad_floor)).astype(np.uint8) * 255
+        # The radius floor has to SCALE with brightness. Chroma radius falls roughly in
+        # proportion to luma, so a fixed floor of 4 cut skin below about 15% illumination even
+        # though its angle stayed at 135 degrees -- measured, skin at 12% light has radius 2.8
+        # and was rejected. A floor proportional to V keeps deep shadow while still excluding
+        # neutrals, whose radius is ~0 at every brightness.
+        vf = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)[:, :, 2].astype(np.float32)
+        floor = np.maximum(self.rad_frac * vf, self.rad_min)
+        m = ((da < self.ang_tol) & (rad > floor)).astype(np.uint8) * 255
         # Value gates only: a true-black pixel has no reliable chroma, and a clipped one has
         # none either. No saturation floor -- brightly-lit pale skin sits near S = 31 and a
         # floor high enough to exclude a wall would take that skin with it.

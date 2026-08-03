@@ -185,8 +185,9 @@ class LivePanel:
         # lag is a transit time the two curves keep a fixed offset beat after beat; if it is
         # noise they wander. This is the check a reader can make by eye, which no single lag
         # number supports on its own.
+        cursor = 40 + len(traces) * 92
         if d is not None and np.isfinite(self.hr) and self.hr > 30:
-            yb = 40 + len(traces) * 92
+            yb = cursor
             cv2.putText(img, "beat overlay", (14, yb - 6), cv2.FONT_HERSHEY_SIMPLEX, .38,
                         GREY, 1, cv2.LINE_AA)
             per = int(round(fs * 60.0 / self.hr))
@@ -214,17 +215,23 @@ class LivePanel:
                 except Exception:
                     pass
 
-        y = 268
+        # One running cursor from here down. The previous version drew the heart rate at a
+        # hard-coded y = 268 and the offset header at y = 262, so they landed on top of each
+        # other; every block now advances `y` by its own height instead.
+        y = cursor + 16
+        cv2.line(img, (14, y - 10), (PANEL_W - 14, y - 10), (52, 54, 58), 1)
         if np.isfinite(self.hr):
             good = self.snr >= 5
-            cv2.putText(img, f"{self.hr:.0f}", (14, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 1.15,
+            cv2.putText(img, f"{self.hr:.0f}", (14, y + 20), cv2.FONT_HERSHEY_SIMPLEX, 1.1,
                         (235, 235, 235) if good else GREY, 2, cv2.LINE_AA)
-            cv2.putText(img, "bpm", (96, y + 18), cv2.FONT_HERSHEY_SIMPLEX, .5, GREY, 1,
+            cv2.putText(img, "bpm", (92, y + 20), cv2.FONT_HERSHEY_SIMPLEX, .48, GREY, 1,
                         cv2.LINE_AA)
-            cv2.putText(img, f"SNR {self.snr:.1f}" + ("" if good else "  weak signal"),
-                        (150, y + 18), cv2.FONT_HERSHEY_SIMPLEX, .45,
+            cv2.putText(img, f"SNR {self.snr:.1f}" + ("" if good else "  weak"),
+                        (PANEL_W - 110, y + 20), cv2.FONT_HERSHEY_SIMPLEX, .44,
                         GREY if good else (80, 165, 235), 1, cv2.LINE_AA)
-        y = 262
+            y += 40
+        y += 22
+        cv2.line(img, (14, y - 14), (PANEL_W - 14, y - 14), (52, 54, 58), 1)
         put("PROXIMAL -> HAND OFFSET", y, GREY, .45)
         if d is None:
             put("hand not visible", y + 30, (80, 165, 235))

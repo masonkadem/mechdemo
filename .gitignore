@@ -36,6 +36,7 @@ compile.log
 figures/*.png
 figures/*.pdf
 !figures/fig_main.*
+!figures/fig_monotonicity_*.*
 !figures/fig_calibration.*
 !figures/fig_shap_reference.*
 !figures/fig_feature_scatter.*
