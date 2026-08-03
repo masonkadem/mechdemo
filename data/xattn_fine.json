@@ -1,0 +1,13 @@
+{
+  "n_params": 93219,
+  "n_tokens": 310,
+  "width_ms": 96.0,
+  "stride_ms": 32.0,
+  "dbp_mae": 9.077238082885742,
+  "attn_lag_median_ms": 60.25849151611328,
+  "pat_median_ms": 309.51568603515625,
+  "r_lag_pat_pooled": -0.0009413097225295259,
+  "r_lag_pat_within": -0.019482051040143403,
+  "audit_slope": -0.006547462940215926,
+  "frac_faithful": 0.7454545454545455
+}
