@@ -32,10 +32,15 @@ from pathlib import Path
 import numpy as np
 import h5py
 import lightgbm as lgb
+import torch
 
 import mechlib
 import lightgbm_arm as gbm
 import features_full as ff
+import ood_benchmark as ob
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+ARCHS = ["lenet1d", "inception1d", "xresnet1d50", "xresnet1d101", "transformer"]
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
@@ -99,6 +104,8 @@ def mean_floor(y, groups):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--max-seg", type=int, default=15000)
+    ap.add_argument("--deep", action="store_true", help="also evaluate the deep nets")
+    ap.add_argument("--latex", action="store_true", help="emit a LaTeX table")
     args = ap.parse_args()
 
     full = pickle.load(open(DATA / "_feat_full_ALLtrain.pkl", "rb"))
@@ -126,7 +133,7 @@ def main():
         X = mechlib.normalize(sig[:, :, [0, 1]])
         F = ff.compute_full(X, FS)
         g = np.array([abs(hash(s)) % 1000000 for s in subj])
-        ext[name] = {"F": F, "y": y, "g": g,
+        ext[name] = {"F": F, "y": y, "g": g, "X": X,
                      "demo": [demo.get("Age"), demo.get("BMI")],
                      "floor": mean_floor(y[:, TARGET], g),
                      "n_seg": len(y), "n_subj": len(set(subj))}
@@ -165,12 +172,55 @@ def main():
                                    for s in np.unique(e["g"]) if (e["g"] == s).sum() >= 3]))
             row[pname] = mae
             cells.append(f"{mae:10.2f}")
+        # complexity and the features the model actually leant on
+        booster = m.booster_.dump_model()
+        n_leaves = int(sum(t["num_leaves"] for t in booster["tree_info"]))
+        gain = m.booster_.feature_importance("gain")
+        names = keys + (["age", "bmi"] if use_demo else [])
+        order = np.argsort(-gain)[:5]
+        row["n_leaves"] = n_leaves
+        row["n_features"] = len(names)
+        row["top_features"] = [(names[i], float(gain[i])) for i in order if gain[i] > 0]
         res[name] = row
         print(f"{name:22s} {curve[0]:11.2f} {curve[5]:6.2f} {curve[20]:6.2f} "
               + " ".join(cells), flush=True)
+        print(f"{'':22s} {n_leaves:,} leaves | top: "
+              + ", ".join(f"{n}" for n, _ in row["top_features"]), flush=True)
 
     floor_cells = " ".join(f"{ext[n]['floor']:10.2f}" for n in ext)
     print(f"{'subject-mean floor':22s} {'--':>11s} {'--':>6s} {'--':>6s} {floor_cells}")
+
+    # ---- deep nets ----------------------------------------------------------
+    if args.deep:
+        subs = [s_ for s_ in np.unique(gte) if (gte == s_).sum() >= 150]
+        sel = np.concatenate([np.where(gte == s_)[0][:150] for s_ in subs])
+        Xcf = mechlib.normalize(d["Xte"][sel][:, :, [mechlib.ECG, mechlib.PPG]])
+        ycf, gcf = d["yte"][sel], gte[sel]
+        print(flush=True)
+        for mk in ARCHS:
+            try:
+                ck = torch.load(ROOT / "models" / f"{mk}_ecgppg_full.pt",
+                                map_location=DEVICE, weights_only=False)
+                net = ob.build_model(mk, n_ch=2, L=1250)
+                net.load_state_dict(ck["state_dict"]); net.to(DEVICE).eval()
+            except Exception as exc:
+                print(f"{mk:22s} cannot load ({str(exc)[:40]})", flush=True); continue
+            pcf = ob.predict(net, Xcf, DEVICE, ck["mu"], ck["sd"])[:, TARGET]
+            curve = anchor_curve(pcf, ycf[:, TARGET], gcf, min_seg=60)
+            row = {"calfree_curve": curve, "kind": "deep",
+                   "n_params": int(sum(x.numel() for x in net.parameters()))}
+            cells = []
+            for pname, e in ext.items():
+                pe = ob.predict(net, e["X"], DEVICE, ck["mu"], ck["sd"])[:, TARGET]
+                mae = float(np.median([
+                    np.mean(np.abs(pe[e["g"] == s_] - e["y"][e["g"] == s_, TARGET]))
+                    for s_ in np.unique(e["g"]) if (e["g"] == s_).sum() >= 3]))
+                row[pname] = mae
+                cells.append(f"{mae:10.2f}")
+            res[mk] = row
+            print(f"{mk:22s} {curve[0]:11.2f} {curve[5]:6.2f} {curve[20]:6.2f} "
+                  + " ".join(cells), flush=True)
+            print(f"{'':22s} {row['n_params']:,} parameters", flush=True)
 
     res["_meta"] = {n: {k: e[k] for k in ("n_seg", "n_subj", "floor")}
                     for n, e in ext.items()}
@@ -179,7 +229,73 @@ def main():
           "available only for\npeople already in the training set. AAMI is calibration-free "
           "like CalFree but deliberately\nincludes the BP tails, where predicting the mean "
           "stops being nearly free.")
+    if args.latex:
+        write_latex(res, ext)
     print(f"\n[done] data/eval_protocols.json")
+
+
+def write_latex(res, ext):
+    """Emit the protocol table as LaTeX (booktabs)."""
+    lines = [
+        r"\begin{table}[t]", r"\centering", r"\small",
+        r"\caption{Diastolic BP mean absolute error (mmHg) across the three PulseDB "
+        r"protocols. CalFree and AAMI are calibration-free; CalBased shares 100\% of its "
+        r"subjects with training and is therefore an upper bound obtainable only for "
+        r"patients already seen during training. $k$ is the number of per-subject "
+        r"calibration anchors, each fitting a single offset from $k$ cuff readings. The "
+        r"final row is the error of predicting each subject's own mean.}",
+        r"\label{tab:protocols}",
+        r"\begin{tabular}{l r r r r r r}", r"\toprule",
+        r"Model & Complexity & \multicolumn{3}{c}{CalFree} & CalBased & AAMI \\",
+        r"\cmidrule(lr){3-5}",
+        r" & & $k{=}0$ & $k{=}5$ & $k{=}20$ & & \\", r"\midrule",
+    ]
+
+    def fmt(v):
+        return "--" if v is None or not np.isfinite(v) else f"{v:.2f}"
+
+    gbm_rows = [(k, v) for k, v in res.items()
+                if not k.startswith("_") and v.get("kind") != "deep"]
+    deep_rows = [(k, v) for k, v in res.items() if v.get("kind") == "deep"]
+
+    for label, rows in (("\\textit{Feature models}", gbm_rows),
+                        ("\\textit{Deep networks}", deep_rows)):
+        if not rows:
+            continue
+        lines.append(f"\\multicolumn{{7}}{{l}}{{{label}}} \\\\")
+        for name, v in rows:
+            c = v.get("calfree_curve", {})
+            comp = (f"{v['n_leaves']:,} leaves" if "n_leaves" in v
+                    else f"{v['n_params']:,} par" if "n_params" in v else "--")
+            lines.append(
+                f"\\quad {name.replace('_', ' ')} & {comp} & "
+                f"{fmt(c.get(0))} & {fmt(c.get(5))} & {fmt(c.get(20))} & "
+                f"{fmt(v.get('CalBased'))} & {fmt(v.get('AAMI'))} \\\\")
+    lines.append(r"\midrule")
+    lines.append(
+        "Predict subject mean & 0 & -- & -- & -- & "
+        f"{fmt(ext.get('CalBased', {}).get('floor'))} & "
+        f"{fmt(ext.get('AAMI', {}).get('floor'))} \\\\")
+    lines += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
+
+    # per-model top features, as a companion table
+    feat = [(k, v["top_features"]) for k, v in res.items()
+            if isinstance(v, dict) and v.get("top_features")]
+    if feat:
+        lines += ["", r"\begin{table}[t]", r"\centering", r"\small",
+                  r"\caption{Highest-gain features per gradient-boosted variant.}",
+                  r"\label{tab:features}",
+                  r"\begin{tabular}{l l}", r"\toprule",
+                  r"Model & Top features by split gain \\", r"\midrule"]
+        for name, fs_ in feat:
+            esc = [n.replace("_", r"\_") for n, _ in fs_]
+            pretty = ", ".join("\\texttt{" + e + "}" for e in esc)
+            lines.append(f"{name.replace('_', ' ')} & {pretty} \\\\")
+        lines += [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
+
+    out = ROOT / "TABLE_protocols.tex"
+    out.write_text("\n".join(lines), encoding="utf-8")
+    print(f"[done] {out.name}")
 
 
 if __name__ == "__main__":
