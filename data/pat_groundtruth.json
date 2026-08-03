@@ -1,0 +1,58 @@
+[
+  {
+    "estimator": "foot_tangent",
+    "valid": 0.4752,
+    "r_pooled": -0.14071567517727204,
+    "r_within": 0.026344932527332367,
+    "bias_ms": 146.25360107421875,
+    "n_subj": 35
+  },
+  {
+    "estimator": "foot_min",
+    "valid": 0.9924,
+    "r_pooled": -0.3505773898209663,
+    "r_within": -0.2094408276793232,
+    "bias_ms": 224.0,
+    "n_subj": 50
+  },
+  {
+    "estimator": "peak",
+    "valid": 0.9008,
+    "r_pooled": 0.3394585611089627,
+    "r_within": 0.20782316569922527,
+    "bias_ms": 256.0,
+    "n_subj": 50
+  },
+  {
+    "estimator": "max_slope",
+    "valid": 0.9428,
+    "r_pooled": 0.03936092645255203,
+    "r_within": 0.13555063974283021,
+    "bias_ms": 200.0,
+    "n_subj": 50
+  },
+  {
+    "estimator": "second_deriv",
+    "valid": 1.0,
+    "r_pooled": 0.10791763586125297,
+    "r_within": 0.2063495959911707,
+    "bias_ms": 64.0,
+    "n_subj": 50
+  },
+  {
+    "estimator": "xcorr",
+    "valid": 0.6976,
+    "r_pooled": 0.2901481834628768,
+    "r_within": 0.06142102138276052,
+    "bias_ms": 284.7067121267319,
+    "n_subj": 38
+  },
+  {
+    "estimator": "xcorr_deriv",
+    "valid": 0.8464,
+    "r_pooled": 0.07491919612917082,
+    "r_within": 0.17740472823747697,
+    "bias_ms": 245.01808989048004,
+    "n_subj": 49
+  }
+]
