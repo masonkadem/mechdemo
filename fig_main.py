@@ -117,9 +117,9 @@ def main():
     e = json.loads((ROOT / "data" / "ood_benchmark_ecgppg_full.json").read_text())["models"]
     disp0 = {"lenet1d": "LeNet", "inception1d": "Incep", "xresnet1d50": "XR50",
              "xresnet1d101": "XR101", "transformer": "Trans"}
-    fig = plt.figure(figsize=(11.5, 15.6))
+    fig = plt.figure(figsize=(11.5, 15.0))
     # rows: [a violins + b table] / [c waveform + d DBP table] / [e OOD scatter + f probe bars]
-    gs = fig.add_gridspec(4, 2, height_ratios=[0.85, 1.45, 1.0, 1.0],
+    gs = fig.add_gridspec(4, 2, height_ratios=[0.85, 1.45, 1.0, 1.05],
                           width_ratios=[1.05, 1.15], hspace=0.55, wspace=0.3)
 
     # ---- a: violins (top-left) ----
@@ -264,7 +264,7 @@ def main():
     # device fits a single per-subject offset and is scored on held-out segments; k = 0 is the
     # calibration-free case. This is a different question from panel d -- "how accurate" versus
     # "how much must the user do before it works" -- and the two order the models differently.
-    axg = fig.add_subplot(gs[3, :])
+    axg = fig.add_subplot(gs[3, 0])
     cam = json.loads((ROOT / "data" / "calib_all_models.json").read_text())
     curves = {k: {int(a): b for a, b in v["curve"].items()}
               for k, v in cam.items() if isinstance(v, dict) and "curve" in v}
@@ -281,18 +281,18 @@ def main():
                  marker="o", ms=4, label=lab)
     if tgt:
         axg.axhline(tgt, color=RED, lw=0.8, ls=":", alpha=0.8)
-        axg.text(20, tgt - 0.08, f"best deep net at k=20 ({tgt:.2f})", fontsize=7,
-                 color=RED, ha="right", va="top")
+        axg.text(20, tgt + 0.06, f"best deep net ({tgt:.2f})", fontsize=7,
+                 color=RED, ha="right", va="bottom")
     axg.set_xlabel("k  =  cuff readings collected from this person", fontsize=8.5)
     axg.set_ylabel("DBP MAE (mmHg)", fontsize=8.5)
     axg.tick_params(labelsize=7.5)
     axg.legend(fontsize=7.5, frameon=False, loc="upper right")
-    axg.text(0.01, 0.05, "k = 0 is calibration-free", transform=axg.transAxes,
-             fontsize=7.5, color="#9aa0a6")
+    axg.text(0.99, 0.95, "k = 0 is calibration-free", transform=axg.transAxes,
+             fontsize=7.5, color="#9aa0a6", ha="right", va="top")
     axg.spines[["top", "right"]].set_visible(False)
-    axg.text(-0.055, 1.04, "g", transform=axg.transAxes, fontsize=13, fontweight="bold")
-    axg.set_title("Calibration burden: demographics halve the cuff readings needed",
-                  fontsize=9, loc="left")
+    axg.set_box_aspect(0.85)          # same square as e and f, so the panel letters line up
+    axg.text(-0.24, 1.04, "g", transform=axg.transAxes, fontsize=13, fontweight="bold")
+    axg.set_title("Calibration burden", fontsize=9, loc="left")
 
     fig.savefig(FIG / "fig_main.png", dpi=185, bbox_inches="tight")
     fig.savefig(FIG / "fig_main.pdf", bbox_inches="tight")
