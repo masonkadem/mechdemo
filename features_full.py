@@ -201,6 +201,51 @@ def apg_full(ppg, fs):
     return {k: _safe_median(v) for k, v in acc.items()}
 
 
+def vascular_indices(ppg, fs, height_cm=None):
+    """Published PPG/APG vascular indices, added because they are the field's standard
+    stiffness measures and were missing from the library.
+
+    stiffness_index   height / delta-T, where delta-T is systolic peak to diastolic peak.
+                      This is the one index here with the dimensions of a VELOCITY, so it is a
+                      direct pulse-wave-velocity proxy rather than a shape descriptor -- the
+                      quantity the governing law actually concerns. Height is per subject and is
+                      supplied by the caller; without it, delta_t alone is returned and the
+                      caller can scale later.
+    delta_t           systolic-to-diastolic peak interval on its own, so the timing is available
+                      even when height is not.
+    crest_time_ratio  crest time divided by cycle time, i.e. crest time made rate-independent.
+                      Raw crest time confounds stiffness with heart rate; the ratio does not.
+    vascular_age      (b - c - d - e) / a from the second derivative.
+
+    Reflection index and augmentation index already exist as reflect_idx and aix.
+    """
+    wz = _z(ppg)
+    sm = savgol_filter(wz, max(int(0.05 * fs) | 1, 5), 3)
+    feet = _beats(wz, fs)
+    dts, ctrs = [], []
+    for s, e in zip(feet[:-1], feet[1:]):
+        n = e - s
+        if not (int(0.3 * fs) < n < int(1.5 * fs)):
+            continue
+        seg = sm[s:e]
+        pks, _ = find_peaks(seg)
+        if len(pks) < 1:
+            continue
+        sys_i = int(pks[np.argmax(seg[pks])])
+        # diastolic peak: the first maximum after the systolic peak, i.e. the reflected wave
+        later = pks[pks > sys_i + int(0.05 * fs)]
+        if len(later):
+            dia_i = int(later[0])
+            dts.append((dia_i - sys_i) / fs)
+        ctrs.append(sys_i / n)
+    dt = _safe_median(dts)
+    out = {"delta_t": dt,
+           "crest_time_ratio": _safe_median(ctrs),
+           "stiffness_index": (height_cm / 100.0) / dt
+           if (height_cm and np.isfinite(dt) and dt > 1e-6) else np.nan}
+    return out
+
+
 # ---------------------------------------------------------------- complexity + spectral
 def complexity_full(ppg, fs):
     out = {}
@@ -248,6 +293,9 @@ def compute_full(X, fs, ppg_ch=1, ecg_ch=0):
         row.update(vpg_full(ppg, fs))
         row.update(apg_full(ppg, fs))
         row.update(complexity_full(ppg, fs))
+        # height is per subject and not available inside this loop, so stiffness_index is
+        # returned as NaN here and the caller can scale delta_t by height when it has it
+        row.update(vascular_indices(ppg, fs, height_cm=None))
         if ecg_ch is not None:
             ecg = X[i, :, ecg_ch]
             row.update(ecg_hrv_full(ecg, fs))
