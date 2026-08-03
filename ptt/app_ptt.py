@@ -108,7 +108,15 @@ class Worker(QtCore.QThread):
             self.finished_run.emit(self.tag, False, f"import failed: {e}")
             return
         try:
+            import hand_sites as HS
             lmk, mp = P.make_landmarker()
+            # Second model for the distal site. Pose landmark 20 is the index KNUCKLE, so
+            # sampling "hand" from pose alone misses the fingertips entirely -- the densest
+            # capillary bed on the body and the strongest rPPG signal available.
+            try:
+                hlm, _ = HS.make_hand_landmarker()
+            except Exception:
+                hlm = None
             cap = rppg_cam.open_camera(0, 640, 480, 60)
         except Exception as e:                      # noqa: BLE001
             self.finished_run.emit(self.tag, False, str(e))
@@ -138,6 +146,16 @@ class Worker(QtCore.QThread):
                          data=np.ascontiguousarray(frame[:, :, ::-1])), int((time.time()-t_wall)*1000))
             pts = P.sample_points(res.pose_landmarks[0], w, h) if res.pose_landmarks \
                 else [None] * len(SCHEMA)
+            # Fingertips are appended AFTER the fixed pose schema, so the schema length that the
+            # capture loop keys on is unchanged and no frame is dropped for a count mismatch.
+            tip_pts = []
+            if hlm is not None:
+                hres = hlm.detect_for_video(
+                    mp.Image(image_format=mp.ImageFormat.SRGB,
+                             data=np.ascontiguousarray(frame[:, :, ::-1])),
+                    int((time.time() - t_wall) * 1000))
+                tip_pts, _td, _ts = HS.hand_points(hres, w, h)
+            pts = list(pts) + list(tip_pts)
             vis_pts = [p for p in pts if p is not None]
             msk = skin.mask(frame, vis_pts) if vis_pts else None
 
@@ -168,9 +186,13 @@ class Worker(QtCore.QThread):
             # Ringed markers rather than filled discs: a 4 px solid dot on a dim background
             # reads as speckle, and at 24 patches the frame looked noisy. A dark outline plus a
             # small bright core stays legible over both skin and shadow.
-            for p, s in zip(pts, seg):
+            # seg covers the pose schema only; the appended fingertips extend past it, and a
+            # plain zip would silently drop them from the overlay while still sampling them.
+            seg_all = list(seg) + ["finger"] * (len(pts) - len(seg))
+            for p, s in zip(pts, seg_all):
                 if p is not None:
-                    col = (90, 200, 255) if s in P.DISTAL else (140, 245, 140)
+                    col = (90, 200, 255) if (s in P.DISTAL or s.startswith("finger")) \
+                        else (140, 245, 140)
                     cv2.circle(vis, p, 5, (20, 20, 20), 2, cv2.LINE_AA)
                     cv2.circle(vis, p, 5, col, 1, cv2.LINE_AA)
                     cv2.circle(vis, p, 1, col, -1, cv2.LINE_AA)

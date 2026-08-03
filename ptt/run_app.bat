@@ -19,6 +19,11 @@ if not exist "models\pose_landmarker.task" (
   )
 )
 
+if not exist "models\hand_landmarker.task" (
+  echo Fetching the hand model ^(7.8 MB, one time^) ...
+  "%PY%" -c "import urllib.request as u;open('models/hand_landmarker.task','wb').write(u.urlopen('https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',timeout=90).read())"
+)
+
 "%PY%" app_ptt.py
 if errorlevel 1 (
   echo.
