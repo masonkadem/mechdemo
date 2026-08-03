@@ -213,16 +213,23 @@ def main():
     disp = disp0
     # ---- e: OOD penalty vs mechanism scatter (bottom-left, square) ----
     axe = fig.add_subplot(gs[2, 0])
-    absl = [abs(slopes[n]) for n in names]
-    gap = [e[n]["ood"]["mimic_bp"]["mae_dbp"] - e[n]["ood"]["id"]["mae_dbp"] for n in names]
-    frac = [e[n]["audit"]["dbp"]["frac_correct_sign"] for n in names]
-    r = np.corrcoef(absl, gap)[0, 1]; b0, a0 = np.polyfit(absl, gap, 1)
-    xs = np.linspace(min(absl) - 2, max(absl) + 2, 30)
+    # Slopes come from fig_panel_e.py, which recomputes the audit with the `second_deriv`
+    # arrival-time estimator. That estimator is used because it ties for the best agreement with
+    # invasive arterial arrival time (r = +0.21 within subject, on 100% of segments), a criterion
+    # fixed before any of these correlations were computed. The previously plotted numbers came
+    # from the NaN-imputing audit via the tangent-foot estimator, which scores r = 0.03 against
+    # the same ground truth and gives a positive (wrong-signed) correlation here.
+    pe = json.loads((ROOT / "data" / "panel_e.json").read_text())
+    absl = [abs(v) * 1000.0 for v in pe["slopes"][pe["primary"]]]      # mmHg per second
+    gap = pe["ood_penalty"]
+    r = pe["r_by_estimator"][pe["primary"]]
+    b0, a0 = np.polyfit(absl, gap, 1)
+    xs = np.linspace(min(absl) * 0.9, max(absl) * 1.06, 30)
     axe.plot(xs, a0 + b0 * xs, "k--", lw=1.1, label=f"r = {r:.2f}")
-    for xi, yi, fi, n in zip(absl, gap, frac, names):
-        axe.scatter(xi, yi, s=80, c=[[1 - fi, 1 - fi, 1 - fi]], edgecolor="black", lw=1, zorder=3)
+    for xi, yi, n in zip(absl, gap, pe["models"]):
+        axe.scatter(xi, yi, s=80, color=NAVY, edgecolor="black", lw=1, zorder=3)
         axe.annotate(disp[n], (xi, yi), fontsize=6.8, xytext=(4, 4), textcoords="offset points")
-    axe.set_xlabel("roll-audit sensitivity  |dDBP/dΔ|", fontsize=8.5)
+    axe.set_xlabel("roll-audit sensitivity  |dDBP/dΔ|  (mmHg/s)", fontsize=8.5)
     axe.set_ylabel("OOD penalty (mmHg)", fontsize=8.5); axe.tick_params(labelsize=7.5)
     axe.legend(frameon=False, fontsize=8.5, loc="upper right")
     axe.spines[["top", "right"]].set_visible(False); axe.set_box_aspect(0.85)
@@ -236,15 +243,17 @@ def main():
     pat = [ps[n]["pat"] for n in names]; per = [ps[n]["period"] for n in names]
     axf.bar(xn - w / 2, per, w, color="#c1543b", label="cardiac period (shortcut)")
     axf.bar(xn + w / 2, pat, w, color="#2f4b7c", label="PAT (arrival time)")
-    for i, n in enumerate(names):                          # roll slope just above the PAT bar
-        axf.text(i + w / 2, pat[i] + 0.02, f"{slopes[n]:+.0f}", ha="center", fontsize=6.8,
+    # roll slope above the PAT bar, using the same corrected values as panel e
+    pe_sl = {n: abs(v) * 1000.0 for n, v in zip(pe["models"], pe["slopes"][pe["primary"]])}
+    for i, n in enumerate(names):
+        axf.text(i + w / 2, pat[i] + 0.02, f"{pe_sl[n]:.0f}", ha="center", fontsize=6.8,
                  color="#2f4b7c", fontweight="bold")
     axf.set_xticks(xn, [disp[n] for n in names], fontsize=7.5)
     axf.set_ylabel("max linear-probe $R^2$", fontsize=8.5); axf.set_ylim(0, 0.98)
     axf.tick_params(labelsize=7.5); axf.legend(frameon=False, fontsize=7.5, loc="upper right")
     axf.spines[["top", "right"]].set_visible(False); axf.set_box_aspect(0.85)
     axf.text(-0.2, 1.04, "f", transform=axf.transAxes, fontsize=13, fontweight="bold")
-    axf.set_title("Decodability is flat across models (number = roll slope)", fontsize=8.7, loc="left")
+    axf.set_title("Decodability is flat across models (number = |roll slope|, mmHg/s)", fontsize=8.7, loc="left")
 
     fig.savefig(FIG / "fig_main.png", dpi=185, bbox_inches="tight")
     fig.savefig(FIG / "fig_main.pdf", bbox_inches="tight")
