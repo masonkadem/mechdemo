@@ -143,3 +143,42 @@ drop it rather than defend it.
 - CalBased is a 12k subsample of 51,720. Run in full before submission.
 - Every result currently described as "PTT" is PAT = PEP + PTT. The naming is fixed in `mechlib`;
   the write-up needs the same correction throughout.
+
+---
+
+## Quick probes against the arterial ground truth (2026-08-03)
+
+Four short tests using the invasive ABP channel as reference. Together they put a hard ceiling on
+what any cuffless method can achieve on this data.
+
+**1. How much does the governing law actually buy?** Fitting a per-subject line from
+GROUND-TRUTH arrival time (Q-onset to ABP foot) to DBP:
+
+| | DBP MAE |
+|---|---|
+| predict the subject own mean | 5.40 mmHg |
+| + true arrival time | 5.05 mmHg |
+| + true arrival time + true pressure-wave shape | 4.03 mmHg |
+
+**Perfectly measured arrival time buys 0.35 mmHg.** Even reading the shape off the arterial
+waveform itself -- a sensor no wearable can have -- buys only 1.37 mmHg. This is the number the
+field has been chasing with optical proxies that recover arrival time at r <= 0.21.
+
+**2. The law is real and stronger where BP moves more.** r(PAT, DBP) is -0.201 in subjects with a
+small BP range and -0.298 in those with a large one, so the relationship is not an artifact of
+subjects who happen to be stable. It is genuine, and small.
+
+**3. The within-subject signal is mostly not slow drift.** Within-subject DBP sd is 7.03 mmHg
+while the median beat-to-beat change between consecutive segments is 6.61 mmHg. Nearly all the
+within-subject variation is fast, so a model would have to track pressure beat to beat rather
+than follow a trend.
+
+**What this means for the story.** The project has been asking why models do not use the
+governing law. These tests suggest a blunter answer: **on this data the law is worth about
+0.35 mmHg even measured perfectly**, against a 5.40 mmHg floor and 7.03 mmHg of within-subject
+variation to explain. Models do not use it because there is very little there to use, and what is
+there is only recoverable through an optical fiducial that tracks it at r <= 0.21.
+
+That is a stronger and more useful claim than model unfaithfulness, and it is testable elsewhere:
+if the same ceiling appears in a dataset with larger BP excursions, it is a property of cuffless
+sensing rather than of surgical data.
