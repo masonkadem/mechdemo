@@ -57,3 +57,5 @@ data/_*.json
 
 # pose model: 5.5 MB, fetched on first run by ptt/run_app.command
 ptt/models/*.task
+TABLE_full.aux
+TABLE_full.log

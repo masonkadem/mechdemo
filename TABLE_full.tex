@@ -1,0 +1,35 @@
+\documentclass[landscape,a4paper,10pt]{article}
+\usepackage[margin=1cm,landscape]{geometry}
+\usepackage{booktabs,graphicx}
+\pagestyle{empty}
+\begin{document}
+\begin{table}[t]
+\centering
+\caption{Diastolic blood-pressure mean absolute error (mmHg) for every model across every dataset and protocol. CalFree, AAMI and the five external sets are calibration-free; CalBased shares 100\% of its subjects with training and is an upper bound rather than a deployable figure. $k$ is the number of per-subject calibration anchors. The final row gives the error of predicting each subject's own mean, which most external columns barely improve on.}
+\label{tab:full}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{l l r r r r rrrrrrr l}
+\toprule
+Model & Complexity & $n$ & \multicolumn{3}{c}{CalFree} & CalBased & AAMI & MIMIC-BP & BCG & Sensors & UCI2 & PPG-BP & Leans on \\
+\cmidrule(lr){4-6}
+ & & & $k{=}0$ & $k{=}5$ & $k{=}20$ &  &  &  &  &  &  &  & \\
+\midrule
+\multicolumn{14}{l}{\textit{Feature models (LightGBM)}} \\
+\quad GBM all features & 50,400 lv & 83 & 6.90 & 5.15 & 4.82 & 6.16 & 10.81 & 14.65 & 7.49 & 6.73 & 6.59 & 7.29 & 10th-percentile pulse height (how low the trough sits); pulse-shape asymmetry (lopsidedness of the wave) \\
+\quad GBM + demographics & 50,400 lv & 85 & 7.13 & 4.94 & 4.59 & 4.59 & 11.63 & 16.76 & 6.68 & 7.16 & 6.95 & 6.82 & age; body mass index \\
+\quad GBM deep + demo & 190,500 lv & 85 & 7.32 & 4.97 & 4.48 & 3.80 & 11.00 & 17.41 & 6.66 & 6.89 & 6.86 & 6.95 & age; body mass index \\
+\quad GBM no rate shortcut & 50,400 lv & 72 & 7.21 & 5.24 & 4.89 & 6.29 & 11.00 & 14.60 & 7.81 & 6.57 & 6.23 & 7.42 & 10th-percentile pulse height (how low the trough sits); pulse-shape asymmetry (lopsidedness of the wave) \\
+\quad GBM arrival time only & 50,400 lv & 6 & 8.47 & 6.33 & 6.04 & 8.23 & 16.11 & 11.09 & 6.73 & 6.20 & 5.94 & 8.95 & pulse arrival time to the pulse peak; strength of ECG-PPG alignment \\
+\quad GBM single tree & 32 lv & 83 & 7.98 & 5.87 & 5.52 & 7.85 & 12.85 & 13.13 & 6.47 & 8.04 & 7.22 & 6.59 & 10th-percentile pulse height (how low the trough sits); timing of the reflected-wave shoulder \\
+\multicolumn{14}{l}{\textit{Deep networks (raw waveform)}} \\
+\quad lenet1d & 658,786 par & raw & 7.45 & 5.32 & 5.07 & 6.67 & 11.87 & -- & -- & -- & -- & -- & learned from raw waveform \\
+\quad inception1d & 472,450 par & raw & 7.28 & 5.09 & 4.92 & 3.84 & 10.43 & -- & -- & -- & -- & -- & learned from raw waveform \\
+\quad xresnet1d50 & 886,850 par & raw & 7.65 & 5.01 & 4.74 & 3.86 & 10.95 & -- & -- & -- & -- & -- & learned from raw waveform \\
+\quad xresnet1d101 & 1,805,122 par & raw & 7.43 & 5.22 & 4.93 & 5.10 & 11.60 & -- & -- & -- & -- & -- & learned from raw waveform \\
+\quad transformer & 107,010 par & raw & 7.73 & 5.67 & 5.37 & 7.37 & 12.38 & -- & -- & -- & -- & -- & learned from raw waveform \\
+\midrule
+Predict subject mean & 0 & -- & -- & -- & -- & 4.98 & 4.45 & 4.66 & 2.21 & 3.93 & 1.08 & 0.00 & -- \\
+\bottomrule
+\end{tabular}}
+\end{table}
+\end{document}

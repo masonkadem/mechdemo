@@ -153,3 +153,49 @@ Figure: [figures/fig_drug_feedback.png](figures/fig_drug_feedback.png)
   are blocked.
 - PTT-PPG could not test the governing law: cuff BP is measured at activity boundaries, giving a
   1.6 mmHg across-activity spread against 14.7 between subjects.
+
+---
+
+## The MIMIC arrival-time result: why it is not a mechanism win
+
+`GBM arrival time only` posts the best raw MAE of any variant on MIMIC-BP (11.09 against
+13.1-17.4 for the rest), which reads as evidence that restricting a model to the sanctioned
+physics buys out-of-distribution robustness. Three checks say otherwise.
+
+**1. A constant beats it.** MIMIC's DBP mean is 58.4 mmHg against 62.9 in training, a shift of
+-4.5. Predicting the training mean scores **10.33** on MIMIC, better than the 11.09. The
+subject-mean floor is 4.66, so every variant is 2-4x worse than predicting a number.
+
+**2. It wins by flatness, not by tracking.**
+
+| arm | pred sd | MIMIC MAE | within-subject r | slope vs true BP |
+|---|---|---|---|---|
+| all features | 5.88 | 14.65 | 0.157 | 0.76 |
+| no rate shortcut | 5.68 | 14.60 | 0.167 | 0.80 |
+| **PAT only** | **4.45** | **11.09** | **0.032** | **0.40** |
+| morphology only | 5.21 | 13.82 | 0.149 | 0.87 |
+
+PAT-only has the best MAE and the **worst** correlation with the quantity it is predicting. A
+model winning through mechanism would still track BP within subject; this one does not.
+
+**3. On a shift-invariant metric the advantage disappears.** Removing each subject's offset,
+which is what calibration does and what a mean shift cannot fake:
+
+| arm | MIMIC-BP | BCG | Sensors |
+|---|---|---|---|
+| all features | 5.23 | 2.81 | 6.45 |
+| no rate shortcut | 5.18 | 2.94 | 6.38 |
+| PAT only | **5.64** | **2.21** | 6.70 |
+
+PAT-only is now worst on MIMIC and best on BCG. There is no consistent ordering.
+
+**What this does and does not license.** It does not license "restricting to arrival time
+improves OOD generalisation" -- that claim fails all three checks. It does license the weaker and
+still useful statement that **raw cross-dataset MAE is not a measure of mechanism**: under
+distribution shift it rewards degenerate predictors, so the field's standard OOD tables are
+uninformative about whether a model learned physiology. That is a methodological finding, and it
+is the one the evidence supports.
+
+PulseDB and the benchmark papers do not report mean-predictor baselines, so model-versus-model
+OOD comparison is standard practice in this literature. The point is not that those papers erred
+by omission, but that such a comparison cannot carry mechanistic weight.
