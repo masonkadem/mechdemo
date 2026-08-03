@@ -163,6 +163,13 @@ class Worker(QtCore.QThread):
                     int((time.time() - t_wall) * 1000))
                 tip_pts, _td, _ts = HS.hand_points(hres, w, h)
             pts = list(pts) + list(tip_pts)
+            # Path length from pose world landmarks (metres), so the wave speed uses THIS
+            # subject's arm rather than a nominal one -- arm length varies about 20% across
+            # adults and enters the velocity linearly.
+            if res.pose_world_landmarks:
+                pc = HS.head_to_hand_cm(res.pose_world_landmarks[0])
+                if np.isfinite(pc):
+                    panel.path_cm = pc
             vis_pts = [p for p in pts if p is not None]
 
             if vis_pts:

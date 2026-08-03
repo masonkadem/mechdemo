@@ -36,17 +36,28 @@ class LivePanel:
         self.fs = fs_guess
         self.buf_s = buf_s
         self.update_every = update_every
-        self.prox, self.dist, self.T = [], [], []
+        # prox2 is a second, independent proximal region (the other cheek). Forehead and
+        # cheeks sit at the same arterial distance, so the lag between them is the rig's own
+        # noise -- the control that says whether a face-to-hand number means anything.
+        self.prox, self.prox2, self.dist, self.T = [], [], [], []
+        self.null = np.nan
+        self.null_hist = []
+        self.path_cm = np.nan          # face-to-fingertip path, from pose world landmarks
         self.hr = self.snr = np.nan
         self.lag = np.nan
         self.hist = []
         self._last = -1e9
 
-    def push(self, prox_rgb, dist_rgb, t):
-        """Add one frame's proximal (face) and distal (hand) mean RGB."""
+    def push(self, prox_rgb, dist_rgb, t, prox2_rgb=None):
+        """Add one frame's proximal (face) and distal (hand) mean RGB.
+
+        prox2_rgb is an optional second proximal region. When supplied, the lag between the two
+        proximal signals is measured alongside the face-to-hand lag and shown as the null.
+        """
         self.prox.append(prox_rgb); self.dist.append(dist_rgb); self.T.append(t)
+        self.prox2.append(prox2_rgb if prox2_rgb is not None else prox_rgb)
         while self.T and t - self.T[0] > self.buf_s:
-            self.prox.pop(0); self.dist.pop(0); self.T.pop(0)
+            self.prox.pop(0); self.prox2.pop(0); self.dist.pop(0); self.T.pop(0)
         if t - self._last >= self.update_every:
             self._last = t
             self._recompute()
@@ -138,130 +149,108 @@ class LivePanel:
             self.lag = float(lag)
             self.hist.append(self.lag)
             del self.hist[:-HIST]
+        # the null, on the same window and the same estimator as the measurement
+        P2 = np.asarray(self.prox2, float)
+        okq = np.isfinite(P2).all(1)
+        if okq.sum() >= 30:
+            Tq = np.asarray(self.T)[okq]
+            fq = (len(Tq) - 1) / max(Tq[-1] - Tq[0], 1e-6)
+            if fq >= 5:
+                tq = np.linspace(Tq[0], Tq[-1], len(Tq))
+                q = R.bandpass(np.interp(tq, Tq, R.chrom(P2[okq])), fq)
+                n = min(len(p), len(q))
+                if n > 30 and np.std(q[:n]) > 1e-9:
+                    nl, _ = R.lag_subframe(p[:n], q[:n], fq, max_lag_s=min(0.25, 4.0 / fq))
+                    if np.isfinite(nl):
+                        self.null = float(nl)
+                        self.null_hist.append(self.null)
+                        del self.null_hist[:-HIST]
 
     # ------------------------------------------------------------------ render
     def render(self, h):
+        """Three numbers and the traces that produced them.
+
+        The panel used to carry a beat overlay, a sparkline, an SNR readout and a PWV verdict.
+        None of that is needed to answer the question the rig exists for -- is the face-to-hand
+        offset larger than the offset between two points that are at the SAME distance -- and
+        every extra element cost frame time and space that the traces wanted.
+        """
         import cv2
         img = np.full((h, PANEL_W, 3), 28, np.uint8)
-        put = lambda s, y, c=(235, 235, 235), sc=.5, th=1: cv2.putText(
-            img, s, (14, y), cv2.FONT_HERSHEY_SIMPLEX, sc, c, th, cv2.LINE_AA)
 
         tr = self._traces()
-        put("PULSE", 26, GREY, .45)
         if tr is None:
-            put("collecting ...", 60, GREY)
+            cv2.putText(img, "collecting ...", (14, 40), cv2.FONT_HERSHEY_SIMPLEX, .55,
+                        GREY, 1, cv2.LINE_AA)
             need = max(0.0, MIN_BUF_S - (self.T[-1] - self.T[0] if len(self.T) > 1 else 0))
-            put(f"{need:.0f}s more", 82, GREY)
+            cv2.putText(img, f"{need:.0f}s more", (14, 64), cv2.FONT_HERSHEY_SIMPLEX, .45,
+                        GREY, 1, cv2.LINE_AA)
             return img
         p, d, fs = tr
-        # Raw beside cleaned, because "the filter is inventing this" is the first thing anyone
-        # asks of an rPPG trace. The raw mean-green trace carries the pulse buried under
-        # illumination drift; showing both makes clear the band-pass is removing drift rather
-        # than synthesising a rhythm.
-        raw = self._raw_traces()
-        traces = [(p, GREEN, "face", raw[0] if raw else None)]
-        if d is not None:
-            traces.append((d, RED, "hand", raw[1] if raw else None))
-        for k, (sig, col, name, rw) in enumerate(traces):
-            y0, hh = 40 + k * 92, 34
-            if rw is not None and len(rw) > 8:
-                r = rw[-int(min(len(rw), 6 * fs)):].astype(float)
-                r = (r - r.mean()) / (np.std(r) + 1e-9)
-                xs = np.linspace(14, PANEL_W - 14, len(r))
-                ys = y0 + 14 - np.clip(r, -2.2, 2.2) * 6.0
-                cv2.polylines(img, [np.int32(np.stack([xs, ys], 1))], False, (105, 105, 112),
-                              1, cv2.LINE_AA)
-                cv2.putText(img, "raw", (PANEL_W - 34, y0 + 6), cv2.FONT_HERSHEY_SIMPLEX,
-                            .34, (105, 105, 112), 1, cv2.LINE_AA)
-            s = sig[-int(min(len(sig), 6 * fs)):]
-            s = s / (np.std(s) + 1e-9)
-            xs = np.linspace(14, PANEL_W - 14, len(s))
-            ys = y0 + 34 + hh / 2 - np.clip(s, -2.6, 2.6) * (hh / 5.6)
+
+        # --- the two traces -------------------------------------------------------------
+        y = 30
+        for sig, col, name in [(p, GREEN, "face"), (d, RED, "fingertips")]:
+            if sig is None:
+                continue
+            cv2.putText(img, name, (14, y), cv2.FONT_HERSHEY_SIMPLEX, .42, col, 1, cv2.LINE_AA)
+            z = sig[-int(min(len(sig), 6 * fs)):]
+            z = z / (np.std(z) + 1e-9)
+            xs = np.linspace(14, PANEL_W - 14, len(z))
+            ys = y + 34 - np.clip(z, -2.6, 2.6) * 11.0
             cv2.polylines(img, [np.int32(np.stack([xs, ys], 1))], False, col, 1, cv2.LINE_AA)
-            cv2.putText(img, name, (PANEL_W - 62, y0 + 40), cv2.FONT_HERSHEY_SIMPLEX, .42,
-                        col, 1, cv2.LINE_AA)
-
-        # Beat overlay: both sites averaged over the last few beats and drawn on one axis. If the
-        # lag is a transit time the two curves keep a fixed offset beat after beat; if it is
-        # noise they wander. This is the check a reader can make by eye, which no single lag
-        # number supports on its own.
-        cursor = 40 + len(traces) * 92
-        if d is not None and np.isfinite(self.hr) and self.hr > 30:
-            yb = cursor
-            cv2.putText(img, "beat overlay", (14, yb - 6), cv2.FONT_HERSHEY_SIMPLEX, .38,
-                        GREY, 1, cv2.LINE_AA)
-            per = int(round(fs * 60.0 / self.hr))
-            if per > 6 and len(p) > 3 * per:
-                nb = min(6, len(p) // per)
-                stack = lambda z: np.mean([z[-(i + 1) * per:len(z) - i * per]
-                                           for i in range(nb)], 0)
-                try:
-                    ap, ad = stack(p), stack(d)
-                    xs = np.linspace(14, PANEL_W - 14, per)
-                    for z, c in ((ap, GREEN), (ad, RED)):
-                        zz = (z - z.mean()) / (np.std(z) + 1e-9)
-                        ys = yb + 26 - np.clip(zz, -2.4, 2.4) * 9.0
-                        cv2.polylines(img, [np.int32(np.stack([xs, ys], 1))], False, c, 1,
-                                      cv2.LINE_AA)
-                    # mark the two upstroke peaks; the gap between them is the lag
-                    ip, idd = int(np.argmax(np.gradient(ap))), int(np.argmax(np.gradient(ad)))
-                    for ii, c in ((ip, GREEN), (idd, RED)):
-                        x = 14 + (PANEL_W - 28) * ii / max(per - 1, 1)
-                        cv2.line(img, (int(x), yb + 6), (int(x), yb + 46), c, 1)
-                    if np.isfinite(self.lag):
-                        cv2.putText(img, f"{self.lag:+.0f} ms", (PANEL_W - 70, yb + 20),
-                                    cv2.FONT_HERSHEY_SIMPLEX, .40, (235, 235, 235), 1,
-                                    cv2.LINE_AA)
-                except Exception:
-                    pass
-
-        # One running cursor from here down. The previous version drew the heart rate at a
-        # hard-coded y = 268 and the offset header at y = 262, so they landed on top of each
-        # other; every block now advances `y` by its own height instead.
-        y = cursor + 16
-        cv2.line(img, (14, y - 10), (PANEL_W - 14, y - 10), (52, 54, 58), 1)
-        if np.isfinite(self.hr):
-            good = self.snr >= 5
-            cv2.putText(img, f"{self.hr:.0f}", (14, y + 20), cv2.FONT_HERSHEY_SIMPLEX, 1.1,
-                        (235, 235, 235) if good else GREY, 2, cv2.LINE_AA)
-            cv2.putText(img, "bpm", (92, y + 20), cv2.FONT_HERSHEY_SIMPLEX, .48, GREY, 1,
-                        cv2.LINE_AA)
-            cv2.putText(img, f"SNR {self.snr:.1f}" + ("" if good else "  weak"),
-                        (PANEL_W - 110, y + 20), cv2.FONT_HERSHEY_SIMPLEX, .44,
-                        GREY if good else (80, 165, 235), 1, cv2.LINE_AA)
-            y += 40
-        y += 22
-        cv2.line(img, (14, y - 14), (PANEL_W - 14, y - 14), (52, 54, 58), 1)
-        put("PROXIMAL -> HAND OFFSET", y, GREY, .45)
+            y += 72
         if d is None:
-            put("hand not visible", y + 30, (80, 165, 235))
-            put("bring the hand into frame and light it", y + 50, GREY, .42)
-        elif len(self.hist) >= 4:
-            med = float(np.median(self.hist)); sd = float(np.std(self.hist))
-            # An offset means nothing if it is smaller than its own scatter.
-            trust = sd < abs(med) and 5.0 <= abs(med) <= 120.0
-            cv2.putText(img, f"{med:+.0f}", (14, y + 36), cv2.FONT_HERSHEY_SIMPLEX, .95,
-                        (235, 235, 235) if trust else GREY, 2, cv2.LINE_AA)
-            cv2.putText(img, "ms", (96, y + 36), cv2.FONT_HERSHEY_SIMPLEX, .45,
-                        GREY, 1, cv2.LINE_AA)
-            cv2.putText(img, f"+/- {sd:.0f}", (PANEL_W - 86, y + 36),
-                        cv2.FONT_HERSHEY_SIMPLEX, .5, GREY, 1, cv2.LINE_AA)
-            msg = ("unstable: spread exceeds value" if sd >= abs(med) else
-                   "outside 5-120 ms" if not (5.0 <= abs(med) <= 120.0) else "stable")
-            cv2.putText(img, msg, (14, y + 58), cv2.FONT_HERSHEY_SIMPLEX, .42,
-                        GREY if trust else (80, 165, 235), 1, cv2.LINE_AA)
-            hs = np.array(self.hist[-HIST:], float)     # sparkline of recent estimates
-            if len(hs) > 2 and np.ptp(hs) > 1e-9:
-                x0, x1, yb, hh2 = 14, PANEL_W - 14, y + 112, 30
-                xs = np.linspace(x0, x1, len(hs))
-                ys = yb - (hs - hs.min()) / np.ptp(hs) * hh2
-                cv2.polylines(img, [np.int32(np.stack([xs, ys], 1))], False, NAVY, 1,
-                              cv2.LINE_AA)
-                cv2.putText(img, f"last {len(hs)} windows", (x0, yb + 15),
-                            cv2.FONT_HERSHEY_SIMPLEX, .38, GREY, 1, cv2.LINE_AA)
-        else:
-            put("collecting ...", y + 30, GREY)
+            cv2.putText(img, "fingertips not visible", (14, y + 6),
+                        cv2.FONT_HERSHEY_SIMPLEX, .45, (80, 165, 235), 1, cv2.LINE_AA)
 
-        cv2.putText(img, f"{fs:.1f} fps   {1000/fs:.0f} ms/frame", (14, h - 16),
+        # --- the three numbers ----------------------------------------------------------
+        y += 14
+        cv2.line(img, (14, y), (PANEL_W - 14, y), (52, 54, 58), 1)
+        y += 30
+
+        def row(label, val, spread, colour, note=""):
+            nonlocal y
+            cv2.putText(img, label, (14, y), cv2.FONT_HERSHEY_SIMPLEX, .44, GREY, 1,
+                        cv2.LINE_AA)
+            txt = "--" if not np.isfinite(val) else f"{val:+.1f}"
+            cv2.putText(img, txt, (14, y + 34), cv2.FONT_HERSHEY_SIMPLEX, .95, colour, 2,
+                        cv2.LINE_AA)
+            cv2.putText(img, "ms", (96, y + 34), cv2.FONT_HERSHEY_SIMPLEX, .45, GREY, 1,
+                        cv2.LINE_AA)
+            if np.isfinite(spread):
+                cv2.putText(img, f"+/- {spread:.1f}", (PANEL_W - 96, y + 34),
+                            cv2.FONT_HERSHEY_SIMPLEX, .48, GREY, 1, cv2.LINE_AA)
+            if note:
+                cv2.putText(img, note, (14, y + 54), cv2.FONT_HERSHEY_SIMPLEX, .40, GREY, 1,
+                            cv2.LINE_AA)
+            y += 76 if note else 60
+
+        nsd = float(np.std(self.null_hist)) if len(self.null_hist) >= 3 else np.nan
+        msd = float(np.std(self.hist)) if len(self.hist) >= 3 else np.nan
+        nmed = float(np.median(self.null_hist)) if self.null_hist else np.nan
+        mmed = float(np.median(self.hist)) if self.hist else np.nan
+
+        row("FACE -> FACE   (control, expect 0)", nmed, nsd, (170, 175, 180))
+        # The measurement is only white when it clears the control; otherwise it is grey,
+        # because a difference smaller than the rig's own scatter is not a measurement.
+        beats = (np.isfinite(mmed) and np.isfinite(nmed)
+                 and abs(mmed) > max(abs(nmed), nsd if np.isfinite(nsd) else 0) * 2)
+        row("FACE -> FINGERTIPS", mmed, msd,
+            (235, 235, 235) if beats else GREY,
+            "" if beats else "not yet above the control")
+
+        # Path length and, when both it and a measurement exist, the implied wave speed. This
+        # is the number the 4-12 m/s physiological range can be checked against; the lag alone
+        # cannot be, since it scales with how long the subject's arm happens to be.
+        if np.isfinite(self.path_cm):
+            txt = f"{self.path_cm:.0f} cm"
+            if np.isfinite(mmed) and abs(mmed) > 1e-6:
+                txt += f"   {self.path_cm / 100.0 / (abs(mmed) / 1000.0):.1f} m/s"
+            cv2.putText(img, txt, (PANEL_W - 168, h - 40), cv2.FONT_HERSHEY_SIMPLEX, .45,
+                        GREY, 1, cv2.LINE_AA)
+        cv2.putText(img, f"{self.hr:.0f} bpm" if np.isfinite(self.hr) else "-- bpm",
+                    (14, h - 40), cv2.FONT_HERSHEY_SIMPLEX, .55, GREY, 1, cv2.LINE_AA)
+        cv2.putText(img, f"{fs:.0f} fps   {1000/fs:.0f} ms/frame", (14, h - 16),
                     cv2.FONT_HERSHEY_SIMPLEX, .42, GREY, 1, cv2.LINE_AA)
         return img

@@ -116,3 +116,51 @@ def verdict(null_ms, fs):
     if null_ms <= q:
         return f"null {null_ms:.0f} ms  (marginal)", (90, 200, 255)
     return f"null {null_ms:.0f} ms  (timing unreliable)", (80, 165, 235)
+
+
+def arm_path_cm(world_lms, side="right"):
+    """Length of the arterial path from the shoulder to the index fingertip, in cm.
+
+    MediaPipe returns pose_world_landmarks in METRES, roughly hip-centred, so segment lengths
+    are metric without any calibration object in the scene. Summing shoulder->elbow->wrist
+    gives this subject's own arm rather than a nominal adult value, which matters because arm
+    length varies by 20% across adults and enters the pulse-wave-velocity estimate linearly.
+
+    The hand beyond the wrist is added as a fixed 18 cm: pose has no reliable finger landmarks,
+    and wrist-to-fingertip varies far less between adults than the arm does.
+
+    Returns nan when the landmarks are missing or implausible, so a bad frame drops out rather
+    than contributing a wrong length.
+    """
+    idx = {"right": (12, 14, 16), "left": (11, 13, 15)}[side]
+    try:
+        pts = [np.array([world_lms[i].x, world_lms[i].y, world_lms[i].z]) for i in idx]
+    except (IndexError, TypeError):
+        return float("nan")
+    upper = float(np.linalg.norm(pts[1] - pts[0]))
+    fore = float(np.linalg.norm(pts[2] - pts[1]))
+    if not (0.15 < upper < 0.50 and 0.15 < fore < 0.45):     # metres; anything else is a bad fit
+        return float("nan")
+    return (upper + fore) * 100.0 + 18.0
+
+
+def head_to_hand_cm(world_lms, side="right"):
+    """Face-to-fingertip path length: neck to shoulder, then down the arm.
+
+    The proximal reference is the face, so the path the pulse takes from there to the fingertip
+    runs back down the neck before it reaches the shoulder. Neck length is taken as the distance
+    from the shoulder midpoint to the ear, which pose does provide.
+    """
+    arm = arm_path_cm(world_lms, side)
+    if not np.isfinite(arm):
+        return float("nan")
+    try:
+        sh = (np.array([world_lms[11].x, world_lms[11].y, world_lms[11].z])
+              + np.array([world_lms[12].x, world_lms[12].y, world_lms[12].z])) / 2.0
+        ear = np.array([world_lms[8].x, world_lms[8].y, world_lms[8].z])
+        neck = float(np.linalg.norm(ear - sh)) * 100.0
+    except (IndexError, TypeError):
+        return float("nan")
+    if not (5.0 < neck < 40.0):
+        return float("nan")
+    return neck + arm
