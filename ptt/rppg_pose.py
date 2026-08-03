@@ -1,14 +1,14 @@
-"""rppg_pose.py -- pose-tracked, densely-sampled rPPG along the neck-to-hand arterial path.
+"""rppg_pose.py -- pose-tracked, densely-sampled rPPG along the face-to-hand arterial path.
 
 What this adds over the hand-drawn boxes
 ----------------------------------------
 MediaPipe Pose gives 33 body landmarks per frame, so the sampling sites FOLLOW the body instead
 of being fixed rectangles the subject has to hold still inside. Patches are laid out along the
-anatomical arterial path -- face and neck (carotid) -> upper arm (brachial) -> forearm (radial)
+anatomical arterial path -- face (proximal reference) -> forearm (radial)
 -> hand -- with each point's distance along that path known per frame.
 
 Patch counts follow bare skin, not anatomy: on a clothed person the shoulder and upper arm are
-under a sleeve, so patches there return nan through the skin mask. Face, neck, forearm and hand
+under a sleeve or a collar, so those sites are not sampled at all. Face, forearm and hand
 are the sites that actually survive, and the face gets the largest share because facial rPPG has
 by far the best SNR while sitting at essentially the same arterial distance as the carotid.
 
@@ -69,7 +69,7 @@ IBI_SD_MAX_MS = 220.0     # implausible beat-to-beat scatter => not a pulse
 #
 # Patch counts follow what is actually BARE SKIN on a clothed person. Shoulder and upper arm are
 # under a sleeve for most people, so patches spent there return nan through the skin mask; face,
-# neck, forearm and hand are the sites that survive. The face earns the largest share because
+# face, forearm and hand are the sites that survive. The face earns the largest share because
 # facial rPPG is by far the highest-SNR site, and it sits at essentially the same arterial
 # distance as the carotid, so it is a proximal reference rather than a point on the arm.
 #
@@ -84,17 +84,18 @@ SEGMENTS = [
     ("forehead", (7, 8),   4, (0.0, 0.0),    0.10),   # l_ear -> r_ear, lifted above the brows
     ("cheek_l",  (2, 7),   3, (0.0, 0.0),   -0.05),   # l_eye -> l_ear, dropped onto the cheek
     ("cheek_r",  (5, 8),   3, (0.0, 0.0),   -0.05),   # r_eye -> r_ear
-    # Neck narrowed from 6 patches to 2. Interpolating the full shoulder line put the outer
-    # patches on collar and shirt, which contributes clothing reflectance rather than pulse; the
-    # two central points sit over the carotid triangles either side of the midline.
-    ("neck",     (11, 12), 2, (0.0, 0.0),    0.06),
+    # Neck removed. It interpolates the SHOULDER landmarks and lifts by a fraction of frame
+    # height, so on anyone wearing a collar the patches sit on fabric rather than skin. The lift
+    # cannot be tuned reliably either -- the offset that clears a t-shirt lands on the chin at a
+    # different camera distance. The face sites already provide a proximal reference, and they
+    # are on bare skin by construction.
     # upper_arm removed: on a clothed subject it lands on a sleeve, and a sleeve patch still
     # enters the lag-vs-distance fit at its nominal 8-32 cm, dragging the slope toward zero and
     # inflating the PWV that the 4-12 m/s plausibility check exists to police.
     ("forearm",  (14, 16), 8, (32.0, 56.0),  0.0),    # r_elbow -> r_wrist
     ("hand",     (16, 20), 6, (56.0, 70.0),  0.0),    # r_wrist -> r_index
 ]
-PROXIMAL = ("forehead", "cheek_l", "cheek_r", "neck")   # reference sites for distal transit
+PROXIMAL = ("forehead", "cheek_l", "cheek_r")   # reference sites, all bare skin
 DISTAL = ("hand",)
 
 
@@ -227,16 +228,18 @@ def capture(seconds, cam=0, show=True, arm=True):
     PM, DM = np.isin(seg_ref, PROXIMAL), np.isin(seg_ref, DISTAL)
     acc, T = [], []
     nseen, nkept = 0, 0
-    COLS = {"forehead": (150, 255, 150), "cheek_l": (110, 240, 110), "cheek_r": (110, 240, 110),
-            "neck": (0, 255, 0), "upper_arm": (0, 200, 220),
-            "forearm": (0, 150, 255), "hand": (0, 100, 255)}
+    # One colour per role rather than per site: proximal reference in green, the distal site in
+    # amber. Seven near-identical greens read as clutter and carry no information the labels do
+    # not already give.
+    COLS = {"forehead": (140, 245, 140), "cheek_l": (140, 245, 140), "cheek_r": (140, 245, 140),
+            "forearm": (90, 200, 255), "hand": (70, 175, 255)}
     ALL = [s[0] for s in SEGMENTS]
     skin = M.SkinModel()                       # learns this person's skin, incl. in shadow
     panel = LIVE.LivePanel() if show else None
     t_wall = time.time()
     t0 = t_wall                                # reset to the moment recording actually starts
     print(f"[cap] {'preview -- press the button (or SPACE) to record' if armed else 'recording'} "
-          f"{seconds:.0f}s -- keep your face, neck and right arm in frame", flush=True)
+          f"{seconds:.0f}s -- keep your face and right arm in frame", flush=True)
     while True:
         if state["quit"]:
             break
@@ -331,7 +334,7 @@ def capture(seconds, cam=0, show=True, arm=True):
                         (bx + bw + 12, by + bh // 2 + 5), cv2.FONT_HERSHEY_SIMPLEX, .45,
                         (190, 190, 190), 1, cv2.LINE_AA)
             if not vis_pts:
-                cv2.putText(vis, "NO POSE - step back so face, neck and right arm are in frame",
+                cv2.putText(vis, "NO POSE - step back so your face and right arm are in frame",
                             (10, by - 12), cv2.FONT_HERSHEY_SIMPLEX, .5, (0, 165, 255), 1)
             elif rec and el < WARMUP_S:
                 cv2.putText(vis, "warm-up (discarded)", (10, by - 12),

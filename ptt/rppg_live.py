@@ -11,7 +11,7 @@ HR is trustworthy. It comes from a spectral peak over several seconds and the ca
 0.7-3 Hz band roughly ten times over.
 
 The live PTT is NOT a per-beat transit time and must not be read as one. At 30 fps a frame is
-33 ms while neck-to-hand transit is 20-50 ms, so a single window cannot resolve it; what is shown
+33 ms while face-to-hand transit is 20-50 ms, so a single window cannot resolve it; what is shown
 is a cross-correlation offset over the whole buffer, refined below the sample interval. It is
 displayed with the spread across recent windows precisely so the spread can be judged against the
 value -- a median of 30 ms with a 40 ms spread is noise, and the panel says so rather than
@@ -43,7 +43,7 @@ class LivePanel:
         self._last = -1e9
 
     def push(self, prox_rgb, dist_rgb, t):
-        """Add one frame's proximal (neck) and distal (hand) mean RGB."""
+        """Add one frame's proximal (face) and distal (hand) mean RGB."""
         self.prox.append(prox_rgb); self.dist.append(dist_rgb); self.T.append(t)
         while self.T and t - self.T[0] > self.buf_s:
             self.prox.pop(0); self.dist.pop(0); self.T.pop(0)
@@ -159,7 +159,7 @@ class LivePanel:
         # illumination drift; showing both makes clear the band-pass is removing drift rather
         # than synthesising a rhythm.
         raw = self._raw_traces()
-        traces = [(p, GREEN, "face+neck", raw[0] if raw else None)]
+        traces = [(p, GREEN, "face", raw[0] if raw else None)]
         if d is not None:
             traces.append((d, RED, "hand", raw[1] if raw else None))
         for k, (sig, col, name, rw) in enumerate(traces):

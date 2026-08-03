@@ -14,7 +14,7 @@ The layout follows the order the work actually happens in:
 
 Design bias worth stating: this interface is built to make a bad recording obvious, not to look
 confident. The transit number is shown with its spread, and greyed out when the spread exceeds
-the value, because at 30 fps neck-to-hand transit sits under one frame and only the CHANGE
+the value, because at 30 fps face-to-hand transit sits under one frame and only the CHANGE
 between conditions carries evidence.
 """
 import sys
@@ -165,9 +165,15 @@ class Worker(QtCore.QThread):
             if msk is not None:
                 cv2.copyTo(frame, msk, vis)
             live = set()
+            # Ringed markers rather than filled discs: a 4 px solid dot on a dim background
+            # reads as speckle, and at 24 patches the frame looked noisy. A dark outline plus a
+            # small bright core stays legible over both skin and shadow.
             for p, s in zip(pts, seg):
                 if p is not None:
-                    cv2.circle(vis, p, 4, (90, 220, 255) if s in P.DISTAL else (120, 235, 140), -1)
+                    col = (90, 200, 255) if s in P.DISTAL else (140, 245, 140)
+                    cv2.circle(vis, p, 5, (20, 20, 20), 2, cv2.LINE_AA)
+                    cv2.circle(vis, p, 5, col, 1, cv2.LINE_AA)
+                    cv2.circle(vis, p, 1, col, -1, cv2.LINE_AA)
                     live.add(s)
             self.sites = live
             self.frame.emit(vis, panel.render(h), el, nkept, nseen)
@@ -258,7 +264,7 @@ class Main(QtWidgets.QMainWindow):
 
         self.chips = {}
         chiprow = QtWidgets.QHBoxLayout(); chiprow.setSpacing(6)
-        for s in ("forehead", "cheek_l", "cheek_r", "neck", "forearm", "hand"):
+        for s in ("forehead", "cheek_l", "cheek_r", "forearm", "hand"):
             c = Chip(s); self.chips[s] = c; chiprow.addWidget(c)
         chiprow.addStretch()
         left.addLayout(chiprow)
