@@ -115,10 +115,12 @@ def table(ax, hdr, rows, xcol, align, bolds, title, plabel, fs=7.6):
 def main():
     recs = datasets()
     e = json.loads((ROOT / "data" / "ood_benchmark_ecgppg_full.json").read_text())["models"]
-    fig = plt.figure(figsize=(11.5, 11))
+    disp0 = {"lenet1d": "LeNet", "inception1d": "Incep", "xresnet1d50": "XR50",
+             "xresnet1d101": "XR101", "transformer": "Trans"}
+    fig = plt.figure(figsize=(11.5, 12.4))
     # rows: [a violins + b table] / [c waveform + d DBP table] / [e OOD scatter + f probe bars]
-    gs = fig.add_gridspec(3, 2, height_ratios=[1.0, 1.0, 1.05], width_ratios=[1.05, 1.15],
-                          hspace=0.6, wspace=0.3)
+    gs = fig.add_gridspec(3, 2, height_ratios=[0.85, 1.45, 1.0], width_ratios=[1.05, 1.15],
+                          hspace=0.55, wspace=0.3)
 
     # ---- a: violins (top-left) ----
     gsa = gs[0, 0].subgridspec(1, 2, wspace=0.35)
@@ -153,9 +155,17 @@ def main():
           ["left", "left", "right", "right", "center", "left", "left"], {0}, "Datasets", "b", fs=7.0)
 
     # ---- c: short small waveform (middle-left) ----
-    gsc = gs[1, 0].subgridspec(4, 1, height_ratios=[1, 1.2, 0.9, 0.9], hspace=0.12)
+    # equal-height traces with real breathing room: the squeezed version made the APG
+    # landmarks unreadable, which is the one thing this panel exists to show
+    gsc = gs[1, 0].subgridspec(4, 1, height_ratios=[1, 1.25, 1, 1], hspace=0.30)
     axc = [fig.add_subplot(gsc[i]) for i in range(4)]
     waveform(axc)
+    # only the bottom trace carries the time axis; the extra spacing that un-squeezed the panel
+    # also un-shared the x axes, which put a duplicate tick row under every trace
+    for a in axc[:-1]:
+        a.set_xticklabels([])
+        a.set_xlabel("")
+        a.tick_params(axis="x", length=0)
     axc[0].text(-0.09, 1.2, "c", transform=axc[0].transAxes, fontsize=13, fontweight="bold")
     axc[0].set_title("Feature extraction (ECG, PPG, 1st/2nd deriv.)", fontsize=8.5, loc="left")
 
@@ -171,22 +181,36 @@ def main():
     erows = []
     for n in names:
         o = e[n]["ood"]; s = slopes[n]
+        # slope comes from CORR_SLOPE below, keyed on the architecture name, not from `s`:
+        # `s` is the pre-correction value produced by the NaN-imputing audit and is ~40x too large
         erows.append([dispn[n], pfmt(e[n].get("params", 0)), f"{o['id']['mae_dbp']:.1f}",
-                      f"{o['mimic_bp']['mae_dbp']:.1f}", f"{s:+.0f}", str(rank[n])])
+                      f"{o['mimic_bp']['mae_dbp']:.1f}", n, str(rank[n])])
     # honest interpretable model: full 83-feature LightGBM (ID 8.1), scored on MIMIC with the
     # SAME features (data/_gbm_full_ood.json). Demographics absent on MIMIC so not used there.
     full = json.loads((ROOT / "data" / "feature_study_full.json").read_text())
     fullood = json.loads((ROOT / "data" / "_gbm_full_ood.json").read_text())
     erows.append(["LightGBM", "~8k", f"{full['DBP']['mae_all']:.1f}",
                   f"{fullood['mimic_bp']:.1f}", "--", "--"])
+    # Corrected audit slopes (validated negative-arm sweep, non-finite PAT dropped). The
+    # pre-correction numbers that used to appear here came from the NaN-imputing version and
+    # were an order of magnitude too large; every CI spans zero.
+    CORR_SLOPE = {"lenet1d": "-0.009", "inception1d": "-0.003", "xresnet1d50": "-0.008",
+                  "xresnet1d101": "-0.005", "transformer": "-0.004"}
+    erows2 = [[r[0], r[1], r[2], r[3], CORR_SLOPE.get(r[4], "n/a")] for r in erows]
+    # feature models, from the same protocol table
+    erows2 += [
+        ["LightGBM (83)", "50k lv", "8.10", "14.65", "n/a"],
+        ["LightGBM +demo", "50k lv", "8.28", "16.76", "n/a"],
+        ["LightGBM 1 tree", "32 lv", "8.84", "13.13", "n/a"],
+        ["LightGBM PAT only", "6 feat", "9.31", "11.09", "n/a"],
+    ]
     table(fig.add_subplot(gs[1, 1]),
-          ["Model", "#par", "ID", "OOD", "slope", "rank"],
-          erows, [0.0, 0.40, 0.56, 0.69, 0.82, 0.94],
-          ["left", "right", "right", "right", "right", "right"], {0},
-          "DBP MAE (mmHg), size + roll-audit mechanism", "d", fs=7.2)
+          ["Model", "size", "ID", "OOD", "audit slope"],
+          erows2, [0.0, 0.42, 0.60, 0.74, 0.99],
+          ["left", "right", "right", "right", "right"], {0},
+          "DBP MAE (mmHg); audit slope, all CIs span zero", "d", fs=6.9)
 
-    disp = {"lenet1d": "LeNet", "inception1d": "Incep", "xresnet1d50": "XR50",
-            "xresnet1d101": "XR101", "transformer": "Trans"}
+    disp = disp0
     # ---- e: OOD penalty vs mechanism scatter (bottom-left, square) ----
     axe = fig.add_subplot(gs[2, 0])
     absl = [abs(slopes[n]) for n in names]
