@@ -131,7 +131,23 @@ def segment_ptt(ecg, ppg, fs):
 
 
 def compute_ptt(X, fs, ecg_pos=ECG, ppg_pos=PPG):
-    """Per-segment PTT (s) for a batch (N, L, C). nan where undetectable."""
+    """Per-segment pulse ARRIVAL time (s) for a batch (N, L, C). nan where undetectable.
+
+    NAMING, because it matters for every claim built on this function. What is computed is
+    R-peak -> PPG foot, i.e.
+
+        PAT = PEP + PTT
+
+    where PEP (pre-ejection period) is cardiac -- electrical activation to aortic valve opening --
+    and only PTT carries arterial stiffness. The name `compute_ptt` is kept for compatibility with
+    the existing call sites, but the quantity is PAT and should be described as such.
+
+    This distinction is sharper in surgical datasets than elsewhere: PEP is drug-sensitive.
+    Propofol depresses contractility and lengthens it; ephedrine and epinephrine shorten it. So in
+    VitalDB and MIMIC a substantial part of the measured interval varies with anaesthetic and
+    vasopressor state rather than with vascular tone, and an audit that perturbs this quantity is
+    perturbing a cardiac-plus-vascular composite, not the Moens-Korteweg variable.
+    """
     return np.array([segment_ptt(X[i, :, ecg_pos], X[i, :, ppg_pos], fs) for i in range(len(X))])
 
 
