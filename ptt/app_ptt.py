@@ -123,9 +123,16 @@ class Worker(QtCore.QThread):
             return
 
         SCHEMA = P.schema()
-        seg = np.array([s for s, _ in SCHEMA])
-        dist = np.array([d for _, d in SCHEMA])
-        PM = np.isin(seg, P.PROXIMAL); DM = np.isin(seg, P.DISTAL)
+        # Fingertip slots extend the schema, so seg/dist/PM/DM cover every column of a row.
+        # Appending the tips to `pts` without extending the schema made the rows 34 wide while
+        # the masks stayed 24, which raised an IndexError on the first frame with a hand in it.
+        # The slots are fixed-length whether or not a hand is detected: a missing hand fills them
+        # with nan rather than shortening the row.
+        HAND_SCHEMA = HS.schema()
+        seg = np.array([s for s, _ in SCHEMA] + [s for s, _ in HAND_SCHEMA])
+        dist = np.array([d for _, d in SCHEMA] + [d for _, d in HAND_SCHEMA])
+        PM = np.isin(seg, P.PROXIMAL)
+        DM = np.isin(seg, P.DISTAL) | np.char.startswith(seg.astype(str), "finger_")
         skin = M.SkinModel(); panel = LIVE.LivePanel()
         acc, T = [], []
         t_wall = time.time(); t0 = t_wall
@@ -148,7 +155,7 @@ class Worker(QtCore.QThread):
                 else [None] * len(SCHEMA)
             # Fingertips are appended AFTER the fixed pose schema, so the schema length that the
             # capture loop keys on is unchanged and no frame is dropped for a count mismatch.
-            tip_pts = []
+            tip_pts = [None] * len(HAND_SCHEMA)
             if hlm is not None:
                 hres = hlm.detect_for_video(
                     mp.Image(image_format=mp.ImageFormat.SRGB,

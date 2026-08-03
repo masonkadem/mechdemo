@@ -44,7 +44,26 @@ def make_hand_landmarker(num_hands=1):
     return vision.HandLandmarker.create_from_options(opts), mp
 
 
-def hand_points(result, w, h, groups=("tip", "dip")):
+GROUPS = ("tip", "dip")
+SPEC = {"palm": (PALM, 70.0), "dip": (DIPS, 74.0), "tip": (TIPS, 77.0)}
+
+
+def schema(groups=GROUPS):
+    """Canonical (segment, distance) for every fingertip SLOT, independent of detection.
+
+    Fixed length by construction, mirroring rppg_pose.schema(). The capture loop builds one row
+    per frame and indexes it with masks derived from the schema, so a row whose width depends on
+    whether a hand happened to be detected would desynchronise those masks -- which is exactly
+    the IndexError the first version produced.
+    """
+    out = []
+    for g in groups:
+        idxs, dd = SPEC[g]
+        out += [(f"finger_{g}", dd)] * len(idxs)
+    return out
+
+
+def hand_points(result, w, h, groups=GROUPS):
     """Pixel coordinates for the requested finger groups, with their distance labels.
 
     Distances continue the pose chain: the pose 'hand' segment ends at 70 cm (wrist to index
@@ -52,20 +71,18 @@ def hand_points(result, w, h, groups=("tip", "dip")):
     nominal adult values -- what matters for the PWV fit is that they are ordered and roughly
     correct, since the slope is what carries the physiology.
     """
+    sch = schema(groups)
     if not result.hand_landmarks:
-        return [], [], []
+        # None rather than an empty list: the row must keep its width so the schema-derived
+        # masks stay aligned. A frame with no hand contributes nan at these slots.
+        return [None] * len(sch), np.array([d for _, d in sch]), [s for s, _ in sch]
     lms = result.hand_landmarks[0]
-    spec = {"palm": (PALM, 70.0), "dip": (DIPS, 74.0), "tip": (TIPS, 77.0)}
-    pts, dist, seg = [], [], []
+    pts = []
     for g in groups:
-        idxs, dd = spec[g]
+        idxs, _ = SPEC[g]
         for i in idxs:
-            if i >= len(lms):
-                continue
-            pts.append((int(lms[i].x * w), int(lms[i].y * h)))
-            dist.append(dd)
-            seg.append(f"finger_{g}")
-    return pts, np.array(dist), seg
+            pts.append((int(lms[i].x * w), int(lms[i].y * h)) if i < len(lms) else None)
+    return pts, np.array([d for _, d in sch]), [s for s, _ in sch]
 
 
 def null_control(sigs, fs, sites=("forehead", "cheek_l", "cheek_r")):
