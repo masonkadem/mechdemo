@@ -1,0 +1,22 @@
+\begin{table}[t]
+\centering
+\small
+\caption{PPG-only (wearable) mechanism arms. No ECG is available, so pulse arrival time cannot be measured; single-site reflection timing is the closest sanctioned proxy. DBP MAE (mmHg); $k$ is the number of per-subject calibration anchors.}
+\label{tab:ppgmech}
+\begin{tabular}{l r r r rrrr l}
+\toprule
+Feature set & $n$ & $k{=}0$ & $k{=}20$ & BCG & Sensors & UCI2 & PPG-BP & What it leans on \\
+\midrule
+all PPG + demo & 71 & 7.39 & 4.54 & 7.29 & 7.32 & 7.16 & 6.90 & age; body mass index \\
+all PPG & 69 & 6.99 & 4.73 & 8.89 & 6.50 & 6.03 & 7.84 & 10th-percentile pulse height (how low the trough sits); pulse-shape asymmetry (lopsidedness of the wave) \\
+no shortcut (rate removed) & 65 & 7.10 & 4.78 & 7.67 & 6.65 & 6.03 & 7.68 & 10th-percentile pulse height (how low the trough sits); pulse-shape asymmetry (lopsidedness of the wave) \\
+reflection timing only & 6 & 7.93 & 5.57 & 5.45 & 6.72 & 6.71 & 8.25 & timing of the reflected-wave shoulder; reflect be \\
+reflection (timing + depth) & 15 & 7.64 & 5.34 & 5.62 & 6.52 & 6.43 & 7.77 & late reflection relative to the main peak; timing of the dicrotic notch \\
+timing forced (refl + upstroke) & 28 & 7.51 & 5.04 & 6.14 & 7.15 & 6.51 & 8.31 & timing of the reflected-wave shoulder; t vpg max \\
+rate only (the shortcut) & 4 & 7.76 & 5.71 & 9.30 & 6.57 & 6.74 & 10.90 & low-frequency power; heart rate \\
+demographics only & 2 & 9.45 & 5.75 & 6.95 & 8.10 & 7.79 & 6.84 & age; body mass index \\
+\midrule
+Predict subject mean & 0 & -- & -- & 2.21 & 3.93 & 1.08 & 0.00 & -- \\
+\bottomrule
+\end{tabular}
+\end{table}

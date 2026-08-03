@@ -1,0 +1,722 @@
+[
+  {
+    "feature": "xcorr_lag",
+    "plain": "ECG-PPG cross-correlation lag",
+    "r_ptt": 0.7298937195121223,
+    "r_bp": -0.0512648294077272,
+    "R2_ptt": 0.49016799636615066,
+    "partial_bp": -0.034856934946087124,
+    "n_subj": 144
+  },
+  {
+    "feature": "rr_mean",
+    "plain": "average beat-to-beat interval",
+    "r_ptt": -0.22766868095767784,
+    "r_bp": -0.011276030463773314,
+    "R2_ptt": 0.0757350119665761,
+    "partial_bp": 0.1462936137693819,
+    "n_subj": 144
+  },
+  {
+    "feature": "r_count",
+    "plain": "r count",
+    "r_ptt": 0.19392125676849986,
+    "r_bp": 0.018030677307256264,
+    "R2_ptt": 0.08679995311425559,
+    "partial_bp": -0.13525307758297672,
+    "n_subj": 144
+  },
+  {
+    "feature": "qrs_width",
+    "plain": "qrs width",
+    "r_ptt": 0.1412748618267164,
+    "r_bp": -0.08258207469142663,
+    "R2_ptt": 0.10133386289891082,
+    "partial_bp": -0.1191803464264112,
+    "n_subj": 144
+  },
+  {
+    "feature": "rr_pnn50",
+    "plain": "proportion of large beat-interval changes",
+    "r_ptt": 0.1348246270173674,
+    "r_bp": -0.09653503660460594,
+    "R2_ptt": 0.2395859632544761,
+    "partial_bp": -0.1746473414502974,
+    "n_subj": 144
+  },
+  {
+    "feature": "qrs_amp_mean",
+    "plain": "qrs amp mean",
+    "r_ptt": -0.1297201568929062,
+    "r_bp": -0.024810975818508246,
+    "R2_ptt": 0.04155777684604504,
+    "partial_bp": 0.10963134750236038,
+    "n_subj": 144
+  },
+  {
+    "feature": "spec_spread",
+    "plain": "spec spread",
+    "r_ptt": -0.12922138427178398,
+    "r_bp": -0.14758178938345745,
+    "R2_ptt": 0.07863021981157488,
+    "partial_bp": 0.016199724685038566,
+    "n_subj": 144
+  },
+  {
+    "feature": "hr",
+    "plain": "heart rate",
+    "r_ptt": 0.12293040788001885,
+    "r_bp": 0.0021141350248053865,
+    "R2_ptt": 0.09345906213826298,
+    "partial_bp": -0.14764663660593785,
+    "n_subj": 144
+  },
+  {
+    "feature": "xcorr_width",
+    "plain": "xcorr width",
+    "r_ptt": 0.11112238778956599,
+    "r_bp": -0.030031125194532462,
+    "R2_ptt": 0.10923465860572468,
+    "partial_bp": -0.010702497109512236,
+    "n_subj": 144
+  },
+  {
+    "feature": "qrs_amp_std",
+    "plain": "qrs amp std",
+    "r_ptt": 0.11087947036165667,
+    "r_bp": -0.09418235391932843,
+    "R2_ptt": 0.14961451689833363,
+    "partial_bp": -0.0872900427337718,
+    "n_subj": 144
+  },
+  {
+    "feature": "hrv_hf",
+    "plain": "hrv hf",
+    "r_ptt": -0.09470243287609209,
+    "r_bp": 0.03248448217820732,
+    "R2_ptt": 0.0014187323513993322,
+    "partial_bp": 0.015555585842709467,
+    "n_subj": 144
+  },
+  {
+    "feature": "hrv_lf",
+    "plain": "hrv lf",
+    "r_ptt": -0.09297206386887388,
+    "r_bp": 0.024486810743002296,
+    "R2_ptt": 0.0014012113243074091,
+    "partial_bp": 0.027853333430524315,
+    "n_subj": 144
+  },
+  {
+    "feature": "vpg_max",
+    "plain": "steepest rise rate of the pulse",
+    "r_ptt": -0.08741246155971498,
+    "r_bp": -0.1085212935799046,
+    "R2_ptt": 0.07221103673837925,
+    "partial_bp": 0.055263707826402414,
+    "n_subj": 144
+  },
+  {
+    "feature": "pow_vlf",
+    "plain": "pow vlf",
+    "r_ptt": -0.08680052384183136,
+    "r_bp": -0.1265411415502425,
+    "R2_ptt": 0.062247527325268615,
+    "partial_bp": -0.028496295660391097,
+    "n_subj": 144
+  },
+  {
+    "feature": "hfd",
+    "plain": "waveform complexity (Higuchi fractal dimension)",
+    "r_ptt": -0.08490799120248452,
+    "r_bp": -0.05357795127660461,
+    "R2_ptt": 0.11045094301426835,
+    "partial_bp": 0.02973169808303815,
+    "n_subj": 144
+  },
+  {
+    "feature": "dw75",
+    "plain": "width three-quarters up the downstroke",
+    "r_ptt": 0.0815150548333611,
+    "r_bp": 0.1735724007430215,
+    "R2_ptt": 0.11546388843834239,
+    "partial_bp": 0.09020545770091068,
+    "n_subj": 144
+  },
+  {
+    "feature": "apg_bd_a",
+    "plain": "apg bd a",
+    "r_ptt": 0.07981211158843328,
+    "r_bp": 0.159963052390435,
+    "R2_ptt": -0.04423257724691202,
+    "partial_bp": -0.010691471494769476,
+    "n_subj": 143
+  },
+  {
+    "feature": "ushiro",
+    "plain": "Ushiro ageing index from wave curvature",
+    "r_ptt": -0.07647462907032149,
+    "r_bp": -0.12851658414660555,
+    "R2_ptt": -0.01241965132761084,
+    "partial_bp": 0.012365864532194204,
+    "n_subj": 143
+  },
+  {
+    "feature": "notch_depth",
+    "plain": "depth of the dicrotic notch",
+    "r_ptt": -0.07260506272311634,
+    "r_bp": 0.21126760563380284,
+    "R2_ptt": -0.0005852514659490105,
+    "partial_bp": 0.22171490481501496,
+    "n_subj": 117
+  },
+  {
+    "feature": "vpg_min",
+    "plain": "steepest fall rate of the pulse",
+    "r_ptt": 0.07003255214186294,
+    "r_bp": 0.001385624533756836,
+    "R2_ptt": 0.12157921236775904,
+    "partial_bp": 0.0036513559954926937,
+    "n_subj": 144
+  },
+  {
+    "feature": "rise",
+    "plain": "time from foot to peak (upstroke speed)",
+    "r_ptt": 0.06855882670335249,
+    "r_bp": -0.006229901515522688,
+    "R2_ptt": 0.019950642668187912,
+    "partial_bp": -0.12958214308022303,
+    "n_subj": 144
+  },
+  {
+    "feature": "apg_ce_a",
+    "plain": "apg ce a",
+    "r_ptt": -0.06554068268254361,
+    "r_bp": -0.10441553253167982,
+    "R2_ptt": -0.060984784298580084,
+    "partial_bp": -0.011004045880214955,
+    "n_subj": 143
+  },
+  {
+    "feature": "sw10",
+    "plain": "width near the base of the upstroke",
+    "r_ptt": 0.063392634889456,
+    "r_bp": 0.07009784086078591,
+    "R2_ptt": 0.0037687064359845555,
+    "partial_bp": -0.06394360362305224,
+    "n_subj": 144
+  },
+  {
+    "feature": "dw90",
+    "plain": "dw90",
+    "r_ptt": 0.06223457801352213,
+    "r_bp": 0.16112320817251283,
+    "R2_ptt": 0.09160965466623106,
+    "partial_bp": 0.0744736049883746,
+    "n_subj": 144
+  },
+  {
+    "feature": "spec_ent",
+    "plain": "spectral entropy (how spread out the frequencies are)",
+    "r_ptt": -0.059623786411310095,
+    "r_bp": -0.29965292657933096,
+    "R2_ptt": 0.011414044610459806,
+    "partial_bp": -0.06614592368862737,
+    "n_subj": 144
+  },
+  {
+    "feature": "decay_slope",
+    "plain": "how fast pressure falls after the peak",
+    "r_ptt": 0.05938480987894724,
+    "r_bp": -0.2526453216706514,
+    "R2_ptt": 0.0055409067685696645,
+    "partial_bp": -0.22305003487882774,
+    "n_subj": 117
+  },
+  {
+    "feature": "dw50",
+    "plain": "width at half height, falling edge",
+    "r_ptt": 0.058930425168931405,
+    "r_bp": 0.14965170026825683,
+    "R2_ptt": 0.10681255919436372,
+    "partial_bp": 0.12475416478837746,
+    "n_subj": 144
+  },
+  {
+    "feature": "takazawa",
+    "plain": "Takazawa stiffness index from wave curvature",
+    "r_ptt": 0.058266504670106245,
+    "r_bp": 0.1299547511312217,
+    "R2_ptt": -0.01984912180491623,
+    "partial_bp": 0.03394979110131445,
+    "n_subj": 143
+  },
+  {
+    "feature": "aix",
+    "plain": "augmentation index (how much reflected wave adds to the peak)",
+    "r_ptt": -0.05736988829933241,
+    "r_bp": 0.16626918828753692,
+    "R2_ptt": 0.0014213006063933757,
+    "partial_bp": 0.2177542679472955,
+    "n_subj": 117
+  },
+  {
+    "feature": "reflect_idx",
+    "plain": "strength of the reflected wave",
+    "r_ptt": -0.05736988829933241,
+    "r_bp": 0.16626918828753692,
+    "R2_ptt": 0.0014213006063933757,
+    "partial_bp": 0.2177542679472955,
+    "n_subj": 117
+  },
+  {
+    "feature": "reflect_be",
+    "plain": "reflect be",
+    "r_ptt": 0.055673618282421594,
+    "r_bp": 0.06233712891820009,
+    "R2_ptt": -0.009151972342440917,
+    "partial_bp": 0.034195999088129,
+    "n_subj": 143
+  },
+  {
+    "feature": "apg_b_a",
+    "plain": "early-rebound depth relative to the main peak (stiffness index)",
+    "r_ptt": 0.0544914811340053,
+    "r_bp": 0.1791825889658467,
+    "R2_ptt": -0.009003832041245108,
+    "partial_bp": -0.006789460865714606,
+    "n_subj": 143
+  },
+  {
+    "feature": "spec_centroid",
+    "plain": "spec centroid",
+    "r_ptt": -0.054427676495825625,
+    "r_bp": -0.026824054216696723,
+    "R2_ptt": 0.23179750843153676,
+    "partial_bp": 0.009537337644680057,
+    "n_subj": 144
+  },
+  {
+    "feature": "peak_mean",
+    "plain": "average peak height",
+    "r_ptt": -0.05428965030192358,
+    "r_bp": -0.1887101822380064,
+    "R2_ptt": 0.01344477645208301,
+    "partial_bp": -0.01281335296635964,
+    "n_subj": 144
+  },
+  {
+    "feature": "amp_mean",
+    "plain": "average pulse amplitude",
+    "r_ptt": -0.05428965030192358,
+    "r_bp": -0.1887101822380064,
+    "R2_ptt": 0.01344477645208301,
+    "partial_bp": -0.01281335296635964,
+    "n_subj": 144
+  },
+  {
+    "feature": "apg_c_a",
+    "plain": "reflection shoulder relative to the main peak",
+    "r_ptt": -0.05382593921161119,
+    "r_bp": -0.10008755351923455,
+    "R2_ptt": -0.006128921323140135,
+    "partial_bp": -0.03507666414499699,
+    "n_subj": 143
+  },
+  {
+    "feature": "sw90",
+    "plain": "sw90",
+    "r_ptt": 0.05303222650860894,
+    "r_bp": 0.1167343070090893,
+    "R2_ptt": 0.052643735765287726,
+    "partial_bp": 0.040348892913816214,
+    "n_subj": 144
+  },
+  {
+    "feature": "t_b",
+    "plain": "timing of the early rebound in wave curvature",
+    "r_ptt": 0.05174758208295502,
+    "r_bp": -0.11755738813905973,
+    "R2_ptt": 0.0021391431576293085,
+    "partial_bp": -0.10606240365671506,
+    "n_subj": 143
+  },
+  {
+    "feature": "sys_area",
+    "plain": "area under the systolic part of the pulse",
+    "r_ptt": 0.04998035740981099,
+    "r_bp": -0.0906220351377196,
+    "R2_ptt": 0.023444330681028542,
+    "partial_bp": -0.20040873200019446,
+    "n_subj": 144
+  },
+  {
+    "feature": "dia_area",
+    "plain": "area under the diastolic part",
+    "r_ptt": -0.04998035740981099,
+    "r_bp": 0.0906220351377196,
+    "R2_ptt": 0.023444337772781283,
+    "partial_bp": 0.2004086775026478,
+    "n_subj": 144
+  },
+  {
+    "feature": "sys_dia_ratio",
+    "plain": "systolic to diastolic area ratio",
+    "r_ptt": 0.04987610756325401,
+    "r_bp": -0.09186728693878092,
+    "R2_ptt": 0.023496400072262762,
+    "partial_bp": -0.19983601767795506,
+    "n_subj": 144
+  },
+  {
+    "feature": "rr_sdnn",
+    "plain": "beat-to-beat interval variability",
+    "r_ptt": -0.04836204543967587,
+    "r_bp": -0.06028474828419732,
+    "R2_ptt": 0.104291068655112,
+    "partial_bp": -0.07051108017655515,
+    "n_subj": 144
+  },
+  {
+    "feature": "notch_time",
+    "plain": "timing of the dicrotic notch",
+    "r_ptt": 0.04493662399501028,
+    "r_bp": 0.08392481476524348,
+    "R2_ptt": -7.474993590957564e-05,
+    "partial_bp": -0.03971617210799214,
+    "n_subj": 117
+  },
+  {
+    "feature": "ppg_p10",
+    "plain": "10th-percentile pulse height (how low the trough sits)",
+    "r_ptt": 0.04456871435889047,
+    "r_bp": -0.3424868449576065,
+    "R2_ptt": 0.008166569298896179,
+    "partial_bp": -0.2898840784845232,
+    "n_subj": 144
+  },
+  {
+    "feature": "sw75",
+    "plain": "sw75",
+    "r_ptt": 0.04434860554610973,
+    "r_bp": 0.14010103027032816,
+    "R2_ptt": 0.05961540323576172,
+    "partial_bp": 0.026706744661301185,
+    "n_subj": 144
+  },
+  {
+    "feature": "vpg_ms_area",
+    "plain": "vpg ms area",
+    "r_ptt": -0.04247825011373052,
+    "r_bp": 0.06936151963973985,
+    "R2_ptt": 0.211165815858013,
+    "partial_bp": 0.04285673414130503,
+    "n_subj": 144
+  },
+  {
+    "feature": "pow_mf",
+    "plain": "pow mf",
+    "r_ptt": 0.04237506715169831,
+    "r_bp": -0.13889840702294856,
+    "R2_ptt": 0.07685877303361492,
+    "partial_bp": -0.020714760444043325,
+    "n_subj": 144
+  },
+  {
+    "feature": "ppg_kurt_g",
+    "plain": "pulse peakedness (sharp vs rounded)",
+    "r_ptt": -0.04232819376440351,
+    "r_bp": -0.37036947105919404,
+    "R2_ptt": 0.003014594451545246,
+    "partial_bp": -0.17456279820983595,
+    "n_subj": 144
+  },
+  {
+    "feature": "peak_std",
+    "plain": "peak std",
+    "r_ptt": -0.0421116705654391,
+    "r_bp": 0.03197728464301165,
+    "R2_ptt": 0.004815917050800052,
+    "partial_bp": 0.09795778571932189,
+    "n_subj": 144
+  },
+  {
+    "feature": "sw25",
+    "plain": "sw25",
+    "r_ptt": 0.03948881906984715,
+    "r_bp": 0.11485495151684463,
+    "R2_ptt": 0.03040860003645403,
+    "partial_bp": -0.029237526523307095,
+    "n_subj": 144
+  },
+  {
+    "feature": "sw50",
+    "plain": "width at half height, rising edge",
+    "r_ptt": 0.035688275497509164,
+    "r_bp": 0.11202334776796904,
+    "R2_ptt": 0.06681659688530987,
+    "partial_bp": 0.0106404112512434,
+    "n_subj": 144
+  },
+  {
+    "feature": "dw10",
+    "plain": "width near the base of the downstroke",
+    "r_ptt": -0.031968900332631126,
+    "r_bp": -0.018801852545483277,
+    "R2_ptt": 0.046987698065758754,
+    "partial_bp": 0.15231243495474497,
+    "n_subj": 144
+  },
+  {
+    "feature": "ppg_p75",
+    "plain": "75th-percentile pulse height",
+    "r_ptt": 0.0313094215285438,
+    "r_bp": 0.401647245563372,
+    "R2_ptt": 0.006688762462456976,
+    "partial_bp": 0.1470373506279443,
+    "n_subj": 144
+  },
+  {
+    "feature": "amp_cv",
+    "plain": "beat-to-beat amplitude variability",
+    "r_ptt": -0.03103354255078209,
+    "r_bp": 0.054682654266589165,
+    "R2_ptt": 0.0032632003765730166,
+    "partial_bp": 0.09838592662824461,
+    "n_subj": 144
+  },
+  {
+    "feature": "katz_fd",
+    "plain": "waveform complexity (Katz fractal dimension)",
+    "r_ptt": 0.027817933928550906,
+    "r_bp": 0.07679323238776639,
+    "R2_ptt": 0.10922751209903554,
+    "partial_bp": 0.040662226104509445,
+    "n_subj": 144
+  },
+  {
+    "feature": "pow_lf",
+    "plain": "low-frequency power",
+    "r_ptt": -0.02761081199397617,
+    "r_bp": 0.28187419223614296,
+    "R2_ptt": 0.004794985276914021,
+    "partial_bp": 0.08943801765785017,
+    "n_subj": 144
+  },
+  {
+    "feature": "spec_rolloff",
+    "plain": "spec rolloff",
+    "r_ptt": -0.025962250371312622,
+    "r_bp": -0.05482609453221044,
+    "R2_ptt": 0.16317884503103763,
+    "partial_bp": -0.006721496891799379,
+    "n_subj": 144
+  },
+  {
+    "feature": "t_c",
+    "plain": "timing of the reflected-wave shoulder",
+    "r_ptt": -0.025465769255917238,
+    "r_bp": -0.2354289897507009,
+    "R2_ptt": 0.0007118090808802732,
+    "partial_bp": -0.14887941537131805,
+    "n_subj": 143
+  },
+  {
+    "feature": "ppg_p90",
+    "plain": "90th-percentile pulse height",
+    "r_ptt": 0.024125708864553022,
+    "r_bp": -0.3595962430775719,
+    "R2_ptt": 0.00037697966125453214,
+    "partial_bp": -0.2696492727704639,
+    "n_subj": 144
+  },
+  {
+    "feature": "crest",
+    "plain": "crest time",
+    "r_ptt": 0.0234084866504099,
+    "r_bp": 0.13078793787063608,
+    "R2_ptt": 0.009598623689183924,
+    "partial_bp": -0.13023854902769572,
+    "n_subj": 144
+  },
+  {
+    "feature": "apg_cd_a",
+    "plain": "apg cd a",
+    "r_ptt": -0.02292283361059143,
+    "r_bp": 0.01577766111038194,
+    "R2_ptt": -0.12124156704672222,
+    "partial_bp": -0.029462576212055603,
+    "n_subj": 143
+  },
+  {
+    "feature": "pow_hf",
+    "plain": "high-frequency power (respiratory band)",
+    "r_ptt": 0.02231328062600562,
+    "r_bp": 0.0990935832574103,
+    "R2_ptt": 0.010210231948869719,
+    "partial_bp": 0.12607454139535063,
+    "n_subj": 144
+  },
+  {
+    "feature": "t_d",
+    "plain": "timing of the late reflection",
+    "r_ptt": -0.01851646366185828,
+    "r_bp": -0.22272754606914297,
+    "R2_ptt": 0.00024778615582961755,
+    "partial_bp": -0.1961954373704351,
+    "n_subj": 143
+  },
+  {
+    "feature": "xcorr_peak",
+    "plain": "xcorr peak",
+    "r_ptt": 0.018485440374243815,
+    "r_bp": 0.015452221046932394,
+    "R2_ptt": 0.2798856690156306,
+    "partial_bp": -0.025374050225831137,
+    "n_subj": 144
+  },
+  {
+    "feature": "apg_d_a",
+    "plain": "late reflection relative to the main peak",
+    "r_ptt": -0.01809062608418885,
+    "r_bp": -0.1536257018199733,
+    "R2_ptt": -0.02882018548296032,
+    "partial_bp": -0.003551497578220405,
+    "n_subj": 143
+  },
+  {
+    "feature": "rr_cv",
+    "plain": "rr cv",
+    "r_ptt": 0.017086742404708113,
+    "r_bp": -0.0640549627119093,
+    "R2_ptt": 0.1598237834214089,
+    "partial_bp": -0.10432793386369654,
+    "n_subj": 144
+  },
+  {
+    "feature": "ppg_p25",
+    "plain": "25th-percentile pulse height",
+    "r_ptt": 0.013858828009832291,
+    "r_bp": -0.34584599284043444,
+    "R2_ptt": 0.01608698207178901,
+    "partial_bp": -0.20906675724697876,
+    "n_subj": 144
+  },
+  {
+    "feature": "apg_e_a",
+    "plain": "notch depth relative to the main peak",
+    "r_ptt": 0.012252551351224819,
+    "r_bp": 0.15228288180547822,
+    "R2_ptt": -0.0037589815536763402,
+    "partial_bp": 0.03418586850909134,
+    "n_subj": 143
+  },
+  {
+    "feature": "hrv_lfhf",
+    "plain": "hrv lfhf",
+    "r_ptt": -0.012128215237309399,
+    "r_bp": 0.03716198919498846,
+    "R2_ptt": -8.14983253351788,
+    "partial_bp": 0.010914653746202513,
+    "n_subj": 144
+  },
+  {
+    "feature": "ppg_kurt",
+    "plain": "ppg kurt",
+    "r_ptt": -0.011572403700065391,
+    "r_bp": -0.38025165361689583,
+    "R2_ptt": 0.0022924451773845464,
+    "partial_bp": -0.1466580462955839,
+    "n_subj": 144
+  },
+  {
+    "feature": "dom_freq",
+    "plain": "dom freq",
+    "r_ptt": 0.01127363903676706,
+    "r_bp": 0.12431030621701032,
+    "R2_ptt": 0.07403099295024573,
+    "partial_bp": 0.01716531050247832,
+    "n_subj": 129
+  },
+  {
+    "feature": "rr_rmssd",
+    "plain": "rr rmssd",
+    "r_ptt": -0.009915850746571381,
+    "r_bp": -0.1004991845600751,
+    "R2_ptt": 0.15224117785393834,
+    "partial_bp": -0.09764697250539493,
+    "n_subj": 144
+  },
+  {
+    "feature": "t_e",
+    "plain": "timing of the dicrotic notch",
+    "r_ptt": 0.00990478781516229,
+    "r_bp": -0.13133939058573565,
+    "R2_ptt": 0.022358317801090283,
+    "partial_bp": -0.20981921516842436,
+    "n_subj": 143
+  },
+  {
+    "feature": "ppg_skew",
+    "plain": "pulse-shape asymmetry",
+    "r_ptt": -0.008847822685370888,
+    "r_bp": -0.36653205689623203,
+    "R2_ptt": 1.876720174117293e-05,
+    "partial_bp": -0.19753250169372336,
+    "n_subj": 144
+  },
+  {
+    "feature": "dw25",
+    "plain": "width a quarter up the downstroke",
+    "r_ptt": 0.008548668009498986,
+    "r_bp": 0.13808412290707908,
+    "R2_ptt": 0.04402126717681084,
+    "partial_bp": 0.2218900463756496,
+    "n_subj": 144
+  },
+  {
+    "feature": "t_vpg_max",
+    "plain": "t vpg max",
+    "r_ptt": 0.0055407272442126905,
+    "r_bp": 0.030895499858430573,
+    "R2_ptt": 0.0050112348848817545,
+    "partial_bp": -0.16514070934737804,
+    "n_subj": 144
+  },
+  {
+    "feature": "ppg_std",
+    "plain": "ppg std",
+    "r_ptt": -0.004953265313197704,
+    "r_bp": 0.0030327371423234353,
+    "R2_ptt": -2.298378706533377e-05,
+    "partial_bp": -0.005857715256583207,
+    "n_subj": 144
+  },
+  {
+    "feature": "t_vpg_min",
+    "plain": "t vpg min",
+    "r_ptt": 0.003424439305446217,
+    "r_bp": 0.23898735889304507,
+    "R2_ptt": 0.0013164551908450746,
+    "partial_bp": -0.07723506496171224,
+    "n_subj": 144
+  },
+  {
+    "feature": "vpg_ratio",
+    "plain": "rise-to-fall rate ratio",
+    "r_ptt": 0.003023486947100251,
+    "r_bp": -0.021406111757707263,
+    "R2_ptt": 0.06054402566778413,
+    "partial_bp": 0.046157480691365334,
+    "n_subj": 144
+  },
+  {
+    "feature": "ppg_skew_g",
+    "plain": "pulse-shape asymmetry (lopsidedness of the wave)",
+    "r_ptt": -0.0010867857944876003,
+    "r_bp": -0.42004441988009006,
+    "R2_ptt": -1.698889777201895e-05,
+    "partial_bp": -0.2450930383867381,
+    "n_subj": 144
+  }
+]
