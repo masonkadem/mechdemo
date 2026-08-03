@@ -117,10 +117,10 @@ def main():
     e = json.loads((ROOT / "data" / "ood_benchmark_ecgppg_full.json").read_text())["models"]
     disp0 = {"lenet1d": "LeNet", "inception1d": "Incep", "xresnet1d50": "XR50",
              "xresnet1d101": "XR101", "transformer": "Trans"}
-    fig = plt.figure(figsize=(11.5, 12.4))
+    fig = plt.figure(figsize=(11.5, 15.6))
     # rows: [a violins + b table] / [c waveform + d DBP table] / [e OOD scatter + f probe bars]
-    gs = fig.add_gridspec(3, 2, height_ratios=[0.85, 1.45, 1.0], width_ratios=[1.05, 1.15],
-                          hspace=0.55, wspace=0.3)
+    gs = fig.add_gridspec(4, 2, height_ratios=[0.85, 1.45, 1.0, 1.0],
+                          width_ratios=[1.05, 1.15], hspace=0.55, wspace=0.3)
 
     # ---- a: violins (top-left) ----
     gsa = gs[0, 0].subgridspec(1, 2, wspace=0.35)
@@ -189,8 +189,8 @@ def main():
     # SAME features (data/_gbm_full_ood.json). Demographics absent on MIMIC so not used there.
     full = json.loads((ROOT / "data" / "feature_study_full.json").read_text())
     fullood = json.loads((ROOT / "data" / "_gbm_full_ood.json").read_text())
-    erows.append(["LightGBM", "~8k", f"{full['DBP']['mae_all']:.1f}",
-                  f"{fullood['mimic_bp']:.1f}", "--", "--"])
+    # the LightGBM rows are listed explicitly in erows2 below, from the sparsity sweep, so the
+    # older cached numbers in feature_study_full.json are not appended here as well
     # Audit-slope column dropped: it belongs to panels e/f, and every CI spans zero so it
     # cannot order the rows. What this table shows instead is size against accuracy on the two
     # PulseDB protocols.
@@ -203,16 +203,13 @@ def main():
     # request; it belongs in the caption.
     erows2 = [[r[0], r[1], r[2], r[3]] for r in erows]
     erows2 += [
-        ["LightGBM (83 feat)", "50k lv", "8.10", "14.65"],
-        ["LightGBM + demographics", "50k lv", "8.28", "16.76"],
-        ["LightGBM single tree", "64 lv", "8.92", "12.24"],
-        ["LightGBM PAT only", "6 feat", "8.47", "11.09"],
-        ["Faithful: PAT + morphology", "4.5k lv", "8.63", "15.74"],
-        ["LightGBM 12 feat, 20 trees", "620 lv", "8.69", "15.73"],
+        ["LightGBM, all features", "~1.8k par", "8.47", "15.69"],
+        ["LightGBM single tree, 4 feat", "~190 par", "8.92", "12.24"],
+        ["LightGBM single tree, PAT only", "~190 par", "9.34", "10.96"],
     ]
     table(fig.add_subplot(gs[1, 1]),
           ["Model", "size", "ID", "OOD"],
-          erows2, [0.0, 0.52, 0.72, 0.92],
+          erows2, [0.0, 0.60, 0.78, 0.95],
           ["left", "right", "right", "right"], {0},
           "DBP MAE (mmHg): ID VitalDB, OOD MIMIC-BP", "d", fs=6.9)
 
@@ -260,6 +257,42 @@ def main():
     axf.spines[["top", "right"]].set_visible(False); axf.set_box_aspect(0.85)
     axf.text(-0.2, 1.04, "f", transform=axf.transAxes, fontsize=13, fontweight="bold")
     axf.set_title("Decodability is flat across models (number = |roll slope|, mmHg/s)", fontsize=8.7, loc="left")
+
+
+    # ---- g: calibration burden (bottom, spanning) ----
+    # A calibration anchor is one reference cuff reading taken from the wearer. With k anchors the
+    # device fits a single per-subject offset and is scored on held-out segments; k = 0 is the
+    # calibration-free case. This is a different question from panel d -- "how accurate" versus
+    # "how much must the user do before it works" -- and the two order the models differently.
+    axg = fig.add_subplot(gs[3, :])
+    cam = json.loads((ROOT / "data" / "calib_all_models.json").read_text())
+    curves = {k: {int(a): b for a, b in v["curve"].items()}
+              for k, v in cam.items() if isinstance(v, dict) and "curve" in v}
+    KS = [0, 1, 2, 3, 5, 10, 20]
+    showg = [("gbm deep (83) + demo", GREEN, "-", "LightGBM + demographics"),
+             ("gbm default (83)", NAVY, "-", "LightGBM, waveform only"),
+             ("xresnet1d50", RED, "--", "XResNet50 (887k par)"),
+             ("transformer", "#9aa0a6", "--", "Transformer (107k par)")]
+    tgt = curves.get("xresnet1d50", {}).get(20)
+    for key, col, ls, lab in showg:
+        if key not in curves:
+            continue
+        axg.plot(KS, [curves[key].get(k, np.nan) for k in KS], ls, color=col, lw=1.8,
+                 marker="o", ms=4, label=lab)
+    if tgt:
+        axg.axhline(tgt, color=RED, lw=0.8, ls=":", alpha=0.8)
+        axg.text(20, tgt - 0.08, f"best deep net at k=20 ({tgt:.2f})", fontsize=7,
+                 color=RED, ha="right", va="top")
+    axg.set_xlabel("k  =  cuff readings collected from this person", fontsize=8.5)
+    axg.set_ylabel("DBP MAE (mmHg)", fontsize=8.5)
+    axg.tick_params(labelsize=7.5)
+    axg.legend(fontsize=7.5, frameon=False, loc="upper right")
+    axg.text(0.01, 0.05, "k = 0 is calibration-free", transform=axg.transAxes,
+             fontsize=7.5, color="#9aa0a6")
+    axg.spines[["top", "right"]].set_visible(False)
+    axg.text(-0.055, 1.04, "g", transform=axg.transAxes, fontsize=13, fontweight="bold")
+    axg.set_title("Calibration burden: demographics halve the cuff readings needed",
+                  fontsize=9, loc="left")
 
     fig.savefig(FIG / "fig_main.png", dpi=185, bbox_inches="tight")
     fig.savefig(FIG / "fig_main.pdf", bbox_inches="tight")
