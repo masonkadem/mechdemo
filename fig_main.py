@@ -191,24 +191,30 @@ def main():
     fullood = json.loads((ROOT / "data" / "_gbm_full_ood.json").read_text())
     erows.append(["LightGBM", "~8k", f"{full['DBP']['mae_all']:.1f}",
                   f"{fullood['mimic_bp']:.1f}", "--", "--"])
-    # Corrected audit slopes (validated negative-arm sweep, non-finite PAT dropped). The
-    # pre-correction numbers that used to appear here came from the NaN-imputing version and
-    # were an order of magnitude too large; every CI spans zero.
-    CORR_SLOPE = {"lenet1d": "-0.009", "inception1d": "-0.003", "xresnet1d50": "-0.008",
-                  "xresnet1d101": "-0.005", "transformer": "-0.004"}
-    erows2 = [[r[0], r[1], r[2], r[3], CORR_SLOPE.get(r[4], "n/a")] for r in erows]
-    # feature models, from the same protocol table
+    # Audit-slope column dropped: it belongs to panels e/f, and every CI spans zero so it
+    # cannot order the rows. What this table shows instead is size against accuracy on the two
+    # PulseDB protocols.
+    #
+    # The final row is not decoration. MIMIC's DBP mean sits 4.5 mmHg below the training
+    # distribution, so a constant predictor scores 10.33 -- BETTER than every model here. The
+    # PAT-only arm reaches 11.09 by having the flattest predictions in the set (sd 4.45 against
+    # 5.88) and the WORST within-subject correlation with true BP (0.032 against 0.15-0.17). It
+    # wins the column by predicting nearly a constant, not by using arrival time well. Without
+    # this row the OOD column reads as a ranking; with it, it reads as a warning.
+    erows2 = [[r[0], r[1], r[2], r[3]] for r in erows]
     erows2 += [
-        ["LightGBM (83)", "50k lv", "8.10", "14.65", "n/a"],
-        ["LightGBM +demo", "50k lv", "8.28", "16.76", "n/a"],
-        ["LightGBM 1 tree", "32 lv", "8.84", "13.13", "n/a"],
-        ["LightGBM PAT only", "6 feat", "9.31", "11.09", "n/a"],
+        ["LightGBM (83 feat)", "50k lv", "8.10", "14.65"],
+        ["LightGBM + demographics", "50k lv", "8.28", "16.76"],
+        ["LightGBM single tree", "32 lv", "8.84", "13.13"],
+        ["LightGBM PAT only", "6 feat", "8.47", "11.09"],
+        ["Faithful: PAT + morphology", "4.5k lv", "8.63", "15.74"],
+        ["Predict the training mean", "0", "9.43", "10.33"],
     ]
     table(fig.add_subplot(gs[1, 1]),
-          ["Model", "size", "ID", "OOD", "audit slope"],
-          erows2, [0.0, 0.42, 0.60, 0.74, 0.99],
-          ["left", "right", "right", "right", "right"], {0},
-          "DBP MAE (mmHg); audit slope, all CIs span zero", "d", fs=6.9)
+          ["Model", "size", "ID", "OOD"],
+          erows2, [0.0, 0.52, 0.72, 0.92],
+          ["left", "right", "right", "right"], {0},
+          "DBP MAE (mmHg): ID VitalDB, OOD MIMIC-BP", "d", fs=6.9)
 
     disp = disp0
     # ---- e: OOD penalty vs mechanism scatter (bottom-left, square) ----
