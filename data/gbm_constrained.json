@@ -1,0 +1,74 @@
+{
+  "single tree, PAT only": {
+    "feat": 6,
+    "leaves": 64,
+    "id": 9.340274801705462,
+    "ood": 10.96051605846391,
+    "cal20": 6.327151113949794,
+    "top": [
+      "pat_peak",
+      "xcorr_peak",
+      "ptt_var"
+    ]
+  },
+  "single tree, no shortcuts": {
+    "feat": 72,
+    "leaves": 64,
+    "id": 8.881018223788264,
+    "ood": 13.48507130526211,
+    "cal20": 5.921971469767755,
+    "top": [
+      "ppg_skew_g",
+      "aix",
+      "pat_foot"
+    ]
+  },
+  "single tree, PAT+morph no rate": {
+    "feat": 72,
+    "leaves": 64,
+    "id": 8.881018223788264,
+    "ood": 13.48507130526211,
+    "cal20": 5.921971469767755,
+    "top": [
+      "ppg_skew_g",
+      "aix",
+      "pat_foot"
+    ]
+  },
+  "20 trees, PAT only": {
+    "feat": 6,
+    "leaves": 620,
+    "id": 9.283107620842161,
+    "ood": 10.833570911497247,
+    "cal20": 6.230918105898588,
+    "top": [
+      "pat_peak",
+      "xcorr_peak",
+      "ptt_var"
+    ]
+  },
+  "20 trees, no shortcuts": {
+    "feat": 72,
+    "leaves": 620,
+    "id": 8.568933546454684,
+    "ood": 15.794916865396821,
+    "cal20": 5.391065156588221,
+    "top": [
+      "ppg_skew_g",
+      "ppg_p90",
+      "r_count"
+    ]
+  },
+  "20 trees, all": {
+    "feat": 83,
+    "leaves": 620,
+    "id": 8.44975058922922,
+    "ood": 15.48412644331446,
+    "cal20": 5.265916607126387,
+    "top": [
+      "ppg_skew_g",
+      "ppg_p90",
+      "pow_hf"
+    ]
+  }
+}
