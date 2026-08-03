@@ -1,0 +1,65 @@
+[
+  {
+    "estimator": "foot_tangent",
+    "synth_valid": 1.0,
+    "r_truth": 0.4933442152973645,
+    "bias_ms": 2.7075200758873876,
+    "tracked_ms": -46.43194580078125,
+    "frac_tracked": 0.9673322041829427,
+    "real_valid": 0.485
+  },
+  {
+    "estimator": "foot_min",
+    "synth_valid": 1.0,
+    "r_truth": 0.1441309978900111,
+    "bias_ms": -71.69637419732845,
+    "tracked_ms": -32.0,
+    "frac_tracked": 0.6666666666666666,
+    "real_valid": 0.995
+  },
+  {
+    "estimator": "peak",
+    "synth_valid": 1.0,
+    "r_truth": 0.9568008204927637,
+    "bias_ms": 131.5801210556835,
+    "tracked_ms": -48.0,
+    "frac_tracked": 1.0,
+    "real_valid": 0.9008333333333334
+  },
+  {
+    "estimator": "max_slope",
+    "synth_valid": 1.0,
+    "r_truth": 0.9075485274357268,
+    "bias_ms": 62.054471468308265,
+    "tracked_ms": -48.0,
+    "frac_tracked": 1.0,
+    "real_valid": 0.9291666666666667
+  },
+  {
+    "estimator": "second_deriv",
+    "synth_valid": 1.0,
+    "r_truth": -0.03168405199510782,
+    "bias_ms": 23.943667283488182,
+    "tracked_ms": -48.0,
+    "frac_tracked": 1.0,
+    "real_valid": 1.0
+  },
+  {
+    "estimator": "xcorr",
+    "synth_valid": 1.0,
+    "r_truth": 0.9955497758104137,
+    "bias_ms": -61.956761071768994,
+    "tracked_ms": -30.218804359436035,
+    "frac_tracked": 0.6295584241549174,
+    "real_valid": 0.7691666666666667
+  },
+  {
+    "estimator": "xcorr_deriv",
+    "synth_valid": 0.368,
+    "r_truth": 0.8308044414285439,
+    "bias_ms": -152.48615815756835,
+    "tracked_ms": -48.0012446641922,
+    "frac_tracked": 1.0000259305040042,
+    "real_valid": 0.8391666666666666
+  }
+]
