@@ -1,0 +1,217 @@
+{
+  "full (83 + demo)": {
+    "n_feat": 85,
+    "curve": {
+      "0": 7.130881475519262,
+      "1": 5.818917959307698,
+      "2": 5.5656121604850295,
+      "3": 5.1379791372680295,
+      "5": 4.942783627268236,
+      "10": 4.57476588314397,
+      "20": 4.592443180816671
+    },
+    "top": [
+      [
+        "age",
+        143107641.511261
+      ],
+      [
+        "bmi",
+        134222071.42700195
+      ],
+      [
+        "ppg_p10",
+        46011753.339782715
+      ],
+      [
+        "ppg_skew_g",
+        39749634.48529053
+      ],
+      [
+        "dw10",
+        22271737.671203613
+      ]
+    ],
+    "top_plain": [
+      "age",
+      "body mass index",
+      "10th-percentile pulse height (how low the trough sits)",
+      "pulse-shape asymmetry (lopsidedness of the wave)",
+      "width near the base of the downstroke"
+    ],
+    "CalBased": 4.626663476174501,
+    "AAMI": 11.628981587513033
+  },
+  "no shortcut (rate removed)": {
+    "n_feat": 74,
+    "curve": {
+      "0": 7.357684160435117,
+      "1": 5.733755115306391,
+      "2": 5.605378323611112,
+      "3": 5.07498062295787,
+      "5": 4.959937287516899,
+      "10": 4.598086706097257,
+      "20": 4.574719965314449
+    },
+    "top": [
+      [
+        "age",
+        146939434.47677612
+      ],
+      [
+        "bmi",
+        135530939.5843506
+      ],
+      [
+        "ppg_p10",
+        58884450.77166748
+      ],
+      [
+        "ppg_skew_g",
+        27247445.709350586
+      ],
+      [
+        "dw10",
+        23472513.516845703
+      ]
+    ],
+    "top_plain": [
+      "age",
+      "body mass index",
+      "10th-percentile pulse height (how low the trough sits)",
+      "pulse-shape asymmetry (lopsidedness of the wave)",
+      "width near the base of the downstroke"
+    ],
+    "CalBased": 4.659771666898044,
+    "AAMI": 11.899979612848814
+  },
+  "no shortcut, no demo": {
+    "n_feat": 72,
+    "curve": {
+      "0": 7.214192456224079,
+      "1": 6.120321368775441,
+      "2": 5.4092314155473105,
+      "3": 5.2939559019339235,
+      "5": 5.237613694413257,
+      "10": 4.85448403135574,
+      "20": 4.8886379759900915
+    },
+    "top": [
+      [
+        "ppg_p10",
+        64363243.77453613
+      ],
+      [
+        "ppg_skew_g",
+        27345292.507080078
+      ],
+      [
+        "r_count",
+        25014543.63320923
+      ],
+      [
+        "dw10",
+        22529909.17401123
+      ],
+      [
+        "t_c",
+        22126220.174621582
+      ]
+    ],
+    "top_plain": [
+      "10th-percentile pulse height (how low the trough sits)",
+      "pulse-shape asymmetry (lopsidedness of the wave)",
+      "r count",
+      "width near the base of the downstroke",
+      "timing of the reflected-wave shoulder"
+    ],
+    "CalBased": 6.304382195666175,
+    "AAMI": 11.002470249879753
+  },
+  "PAT only": {
+    "n_feat": 6,
+    "curve": {
+      "0": 8.4691230853354,
+      "1": 7.126227854365107,
+      "2": 7.103075753674889,
+      "3": 6.645115832395853,
+      "5": 6.333137924502567,
+      "10": 6.048161592229803,
+      "20": 6.042056721244874
+    },
+    "top": [
+      [
+        "pat_peak",
+        38191672.82873154
+      ],
+      [
+        "xcorr_peak",
+        24226567.109134674
+      ],
+      [
+        "xcorr_lag",
+        19808605.840816498
+      ],
+      [
+        "ptt_var",
+        16130444.815509796
+      ],
+      [
+        "pat_foot",
+        13971092.031368256
+      ]
+    ],
+    "top_plain": [
+      "pulse arrival time to the pulse peak",
+      "xcorr peak",
+      "ECG-PPG cross-correlation lag",
+      "ptt var",
+      "pulse arrival time to the pulse foot"
+    ],
+    "CalBased": 8.194959278951139,
+    "AAMI": 16.10504639159086
+  },
+  "PAT forced (PAT + morphology)": {
+    "n_feat": 72,
+    "curve": {
+      "0": 7.059741624665702,
+      "1": 5.820397660846401,
+      "2": 5.432615026883902,
+      "3": 5.239471522818665,
+      "5": 5.228826403926904,
+      "10": 4.910109115708259,
+      "20": 4.8932448793954135
+    },
+    "top": [
+      [
+        "ppg_p10",
+        59011789.34298706
+      ],
+      [
+        "ppg_skew_g",
+        33059068.89126587
+      ],
+      [
+        "dw10",
+        22911465.026306152
+      ],
+      [
+        "r_count",
+        22437839.366333008
+      ],
+      [
+        "t_c",
+        22122072.71105957
+      ]
+    ],
+    "top_plain": [
+      "10th-percentile pulse height (how low the trough sits)",
+      "pulse-shape asymmetry (lopsidedness of the wave)",
+      "width near the base of the downstroke",
+      "r count",
+      "timing of the reflected-wave shoulder"
+    ],
+    "CalBased": 6.341640048359836,
+    "AAMI": 10.91032979668261
+  }
+}
