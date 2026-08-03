@@ -62,3 +62,6 @@ data/_*.json
 ptt/models/*.task
 TABLE_full.aux
 TABLE_full.log
+# 5.8 MB model, fetched on first run by the launchers
+ptt/models/*.task
+models/*.task
