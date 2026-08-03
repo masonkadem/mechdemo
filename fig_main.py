@@ -256,7 +256,7 @@ def main():
     axf.tick_params(labelsize=7.5); axf.legend(frameon=False, fontsize=7.5, loc="upper right")
     axf.spines[["top", "right"]].set_visible(False); axf.set_box_aspect(0.85)
     axf.text(-0.2, 1.04, "f", transform=axf.transAxes, fontsize=13, fontweight="bold")
-    axf.set_title("Decodability is flat across models (number = |roll slope|, mmHg/s)", fontsize=8.7, loc="left")
+    axf.set_title("Shortcuts", fontsize=9, loc="left")
 
 
     # ---- g: calibration burden (bottom, spanning) ----
@@ -269,10 +269,10 @@ def main():
     curves = {k: {int(a): b for a, b in v["curve"].items()}
               for k, v in cam.items() if isinstance(v, dict) and "curve" in v}
     KS = [0, 1, 2, 3, 5, 10, 20]
-    showg = [("gbm deep (83) + demo", GREEN, "-", "LightGBM + demographics"),
-             ("gbm default (83)", NAVY, "-", "LightGBM, waveform only"),
-             ("xresnet1d50", RED, "--", "XResNet50 (887k par)"),
-             ("transformer", "#9aa0a6", "--", "Transformer (107k par)")]
+    showg = [("gbm deep (83) + demo", GREEN, "-", "GBM + demographics"),
+             ("gbm default (83)", NAVY, "-", "GBM, waveform"),
+             ("xresnet1d50", RED, "--", "XResNet50"),
+             ("transformer", "#9aa0a6", "--", "Transformer")]
     tgt = curves.get("xresnet1d50", {}).get(20)
     for key, col, ls, lab in showg:
         if key not in curves:
@@ -281,18 +281,30 @@ def main():
                  marker="o", ms=4, label=lab)
     if tgt:
         axg.axhline(tgt, color=RED, lw=0.8, ls=":", alpha=0.8)
-        axg.text(20, tgt + 0.06, f"best deep net ({tgt:.2f})", fontsize=7,
+        axg.text(20, tgt + 0.06, f"best deep net", fontsize=7,
                  color=RED, ha="right", va="bottom")
-    axg.set_xlabel("k  =  cuff readings collected from this person", fontsize=8.5)
+    axg.set_xlabel("cuff readings per person  (k = 0: none)", fontsize=8.5)
     axg.set_ylabel("DBP MAE (mmHg)", fontsize=8.5)
     axg.tick_params(labelsize=7.5)
     axg.legend(fontsize=7.5, frameon=False, loc="upper right")
-    axg.text(0.99, 0.95, "k = 0 is calibration-free", transform=axg.transAxes,
-             fontsize=7.5, color="#9aa0a6", ha="right", va="top")
     axg.spines[["top", "right"]].set_visible(False)
     axg.set_box_aspect(0.85)          # same square as e and f, so the panel letters line up
     axg.text(-0.24, 1.04, "g", transform=axg.transAxes, fontsize=13, fontweight="bold")
     axg.set_title("Calibration burden", fontsize=9, loc="left")
+
+    # ---- h: the camera instrument (bottom-right) ----
+    # A photograph rather than a plot, deliberately: the argument the other panels build is that
+    # arrival time is worth 0.35 mmHg even measured perfectly and is recoverable from PPG at
+    # r <= 0.21, so the bottleneck is instrumentation. This is the instrument -- two optical
+    # sites, no ECG, so no pre-ejection period in the interval, and a same-distance control
+    # (face to face) printed beside the measurement.
+    axh = fig.add_subplot(gs[3, 1])
+    axh.imshow(plt.imread(str(ROOT / "figures" / "assets" / "ptt_app_crop.png")))
+    axh.set_xticks([]); axh.set_yticks([])
+    for sp in axh.spines.values():
+        sp.set_edgecolor("#cccccc"); sp.set_linewidth(0.8)
+    axh.text(-0.06, 1.04, "h", transform=axh.transAxes, fontsize=13, fontweight="bold")
+    axh.set_title("Camera transit time: two optical sites, no ECG", fontsize=9, loc="left")
 
     fig.savefig(FIG / "fig_main.png", dpi=185, bbox_inches="tight")
     fig.savefig(FIG / "fig_main.pdf", bbox_inches="tight")

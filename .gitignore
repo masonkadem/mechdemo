@@ -35,6 +35,8 @@ compile.log
 # all figures are generated -> ignore by default, but force-track the paper figures below
 figures/*.png
 figures/*.pdf
+!figures/assets/
+!figures/assets/*.png
 !figures/fig_main.*
 !figures/fig_monotonicity_*.*
 !figures/fig_calibration.*
