@@ -38,6 +38,7 @@ figures/*.pdf
 !figures/assets/
 !figures/assets/*.png
 !figures/fig_main.*
+!figures/fig_main_noh.*
 !figures/fig_monotonicity_*.*
 !figures/fig_calibration.*
 !figures/fig_shap_reference.*
