@@ -258,7 +258,7 @@ class Main(QtWidgets.QMainWindow):
 
         self.chips = {}
         chiprow = QtWidgets.QHBoxLayout(); chiprow.setSpacing(6)
-        for s in ("forehead", "cheek_l", "cheek_r", "neck", "upper_arm", "forearm", "hand"):
+        for s in ("forehead", "cheek_l", "cheek_r", "neck", "forearm", "hand"):
             c = Chip(s); self.chips[s] = c; chiprow.addWidget(c)
         chiprow.addStretch()
         left.addLayout(chiprow)

@@ -51,6 +51,25 @@ class LivePanel:
             self._last = t
             self._recompute()
 
+    def _raw_traces(self):
+        """Unfiltered mean-green for each site, on the same window as _traces.
+
+        Green alone rather than the chrominance projection: the point of the raw panel is to show
+        what the sensor delivered before any processing, and green is the channel a reader can
+        reason about.
+        """
+        if len(self.T) < 30:
+            return None
+        Pm = np.asarray(self.prox, float)
+        Dm = np.asarray(self.dist, float)
+        okp = np.isfinite(Pm).all(1)
+        if okp.sum() < 30:
+            return None
+        rp = Pm[okp][:, 1]
+        okd = np.isfinite(Dm).all(1)
+        rd = Dm[okd][:, 1] if okd.sum() >= 30 else None
+        return rp, rd
+
     def _traces(self):
         """Buffers -> band-passed proximal signal, and the distal one when the hand is visible.
 
@@ -135,18 +154,67 @@ class LivePanel:
             put(f"{need:.0f}s more", 82, GREY)
             return img
         p, d, fs = tr
-        traces = [(p, GREEN, "face+neck")] + ([(d, RED, "hand")] if d is not None else [])
-        for k, (sig, col, name) in enumerate(traces):
-            y0, hh = 40 + k * 78, 62
+        # Raw beside cleaned, because "the filter is inventing this" is the first thing anyone
+        # asks of an rPPG trace. The raw mean-green trace carries the pulse buried under
+        # illumination drift; showing both makes clear the band-pass is removing drift rather
+        # than synthesising a rhythm.
+        raw = self._raw_traces()
+        traces = [(p, GREEN, "face+neck", raw[0] if raw else None)]
+        if d is not None:
+            traces.append((d, RED, "hand", raw[1] if raw else None))
+        for k, (sig, col, name, rw) in enumerate(traces):
+            y0, hh = 40 + k * 92, 34
+            if rw is not None and len(rw) > 8:
+                r = rw[-int(min(len(rw), 6 * fs)):].astype(float)
+                r = (r - r.mean()) / (np.std(r) + 1e-9)
+                xs = np.linspace(14, PANEL_W - 14, len(r))
+                ys = y0 + 14 - np.clip(r, -2.2, 2.2) * 6.0
+                cv2.polylines(img, [np.int32(np.stack([xs, ys], 1))], False, (105, 105, 112),
+                              1, cv2.LINE_AA)
+                cv2.putText(img, "raw", (PANEL_W - 34, y0 + 6), cv2.FONT_HERSHEY_SIMPLEX,
+                            .34, (105, 105, 112), 1, cv2.LINE_AA)
             s = sig[-int(min(len(sig), 6 * fs)):]
             s = s / (np.std(s) + 1e-9)
             xs = np.linspace(14, PANEL_W - 14, len(s))
-            ys = y0 + hh / 2 - np.clip(s, -2.6, 2.6) * (hh / 5.6)
+            ys = y0 + 34 + hh / 2 - np.clip(s, -2.6, 2.6) * (hh / 5.6)
             cv2.polylines(img, [np.int32(np.stack([xs, ys], 1))], False, col, 1, cv2.LINE_AA)
-            cv2.putText(img, name, (PANEL_W - 52, y0 + 12), cv2.FONT_HERSHEY_SIMPLEX, .42,
+            cv2.putText(img, name, (PANEL_W - 62, y0 + 40), cv2.FONT_HERSHEY_SIMPLEX, .42,
                         col, 1, cv2.LINE_AA)
 
-        y = 212
+        # Beat overlay: both sites averaged over the last few beats and drawn on one axis. If the
+        # lag is a transit time the two curves keep a fixed offset beat after beat; if it is
+        # noise they wander. This is the check a reader can make by eye, which no single lag
+        # number supports on its own.
+        if d is not None and np.isfinite(self.hr) and self.hr > 30:
+            yb = 40 + len(traces) * 92
+            cv2.putText(img, "beat overlay", (14, yb - 6), cv2.FONT_HERSHEY_SIMPLEX, .38,
+                        GREY, 1, cv2.LINE_AA)
+            per = int(round(fs * 60.0 / self.hr))
+            if per > 6 and len(p) > 3 * per:
+                nb = min(6, len(p) // per)
+                stack = lambda z: np.mean([z[-(i + 1) * per:len(z) - i * per]
+                                           for i in range(nb)], 0)
+                try:
+                    ap, ad = stack(p), stack(d)
+                    xs = np.linspace(14, PANEL_W - 14, per)
+                    for z, c in ((ap, GREEN), (ad, RED)):
+                        zz = (z - z.mean()) / (np.std(z) + 1e-9)
+                        ys = yb + 26 - np.clip(zz, -2.4, 2.4) * 9.0
+                        cv2.polylines(img, [np.int32(np.stack([xs, ys], 1))], False, c, 1,
+                                      cv2.LINE_AA)
+                    # mark the two upstroke peaks; the gap between them is the lag
+                    ip, idd = int(np.argmax(np.gradient(ap))), int(np.argmax(np.gradient(ad)))
+                    for ii, c in ((ip, GREEN), (idd, RED)):
+                        x = 14 + (PANEL_W - 28) * ii / max(per - 1, 1)
+                        cv2.line(img, (int(x), yb + 6), (int(x), yb + 46), c, 1)
+                    if np.isfinite(self.lag):
+                        cv2.putText(img, f"{self.lag:+.0f} ms", (PANEL_W - 70, yb + 20),
+                                    cv2.FONT_HERSHEY_SIMPLEX, .40, (235, 235, 235), 1,
+                                    cv2.LINE_AA)
+                except Exception:
+                    pass
+
+        y = 268
         if np.isfinite(self.hr):
             good = self.snr >= 5
             cv2.putText(img, f"{self.hr:.0f}", (14, y + 18), cv2.FONT_HERSHEY_SIMPLEX, 1.15,

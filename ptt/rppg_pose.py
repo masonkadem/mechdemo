@@ -84,8 +84,13 @@ SEGMENTS = [
     ("forehead", (7, 8),   4, (0.0, 0.0),    0.10),   # l_ear -> r_ear, lifted above the brows
     ("cheek_l",  (2, 7),   3, (0.0, 0.0),   -0.05),   # l_eye -> l_ear, dropped onto the cheek
     ("cheek_r",  (5, 8),   3, (0.0, 0.0),   -0.05),   # r_eye -> r_ear
-    ("neck",     (11, 12), 6, (0.0, 0.0),    0.06),   # shoulder line, lifted to the throat
-    ("upper_arm", (12, 14), 4, (8.0, 32.0),  0.0),    # usually under a sleeve
+    # Neck narrowed from 6 patches to 2. Interpolating the full shoulder line put the outer
+    # patches on collar and shirt, which contributes clothing reflectance rather than pulse; the
+    # two central points sit over the carotid triangles either side of the midline.
+    ("neck",     (11, 12), 2, (0.0, 0.0),    0.06),
+    # upper_arm removed: on a clothed subject it lands on a sleeve, and a sleeve patch still
+    # enters the lag-vs-distance fit at its nominal 8-32 cm, dragging the slope toward zero and
+    # inflating the PWV that the 4-12 m/s plausibility check exists to police.
     ("forearm",  (14, 16), 8, (32.0, 56.0),  0.0),    # r_elbow -> r_wrist
     ("hand",     (16, 20), 6, (56.0, 70.0),  0.0),    # r_wrist -> r_index
 ]
