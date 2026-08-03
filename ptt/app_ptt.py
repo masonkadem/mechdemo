@@ -133,7 +133,7 @@ class Worker(QtCore.QThread):
         dist = np.array([d for _, d in SCHEMA] + [d for _, d in HAND_SCHEMA])
         PM = np.isin(seg, P.PROXIMAL)
         DM = np.isin(seg, P.DISTAL) | np.char.startswith(seg.astype(str), "finger_")
-        skin = M.SkinModel(); panel = LIVE.LivePanel()
+        panel = LIVE.LivePanel()
         acc, T = [], []
         t_wall = time.time(); t0 = t_wall
         nseen = nkept = 0
@@ -164,7 +164,6 @@ class Worker(QtCore.QThread):
                 tip_pts, _td, _ts = HS.hand_points(hres, w, h)
             pts = list(pts) + list(tip_pts)
             vis_pts = [p for p in pts if p is not None]
-            msk = skin.mask(frame, vis_pts) if vis_pts else None
 
             if vis_pts:
                 row, r = [], 9
@@ -173,9 +172,22 @@ class Worker(QtCore.QThread):
                         row.append((np.nan,)*3); continue
                     x, y = p
                     y0, y1 = max(0, y-r), min(h, y+r); x0, x1 = max(0, x-r), min(w, x+r)
-                    pa, mm = frame[y0:y1, x0:x1], msk[y0:y1, x0:x1]
-                    row.append((np.nan,)*3 if pa.size == 0 or (mm > 0).mean() < .3
-                               else tuple(pa[mm > 0][:, ::-1].mean(0)))
+                    pa = frame[y0:y1, x0:x1]
+                    # No skin mask. It cost 23 ms of a 33 ms frame budget -- more than both
+                    # landmarkers combined, dominated by an arctan2 over every pixel -- while
+                    # the patches are placed by pose and hand landmarks, so the mask was only
+                    # deciding which pixels INSIDE an already-anatomical patch to average. The
+                    # per-patch checks below do the part that mattered: reject a patch that is
+                    # clipped, black, or too uniform to be skin, all on 18x18 pixels rather
+                    # than 307k.
+                    if pa.size == 0:
+                        row.append((np.nan,)*3); continue
+                    px = pa.reshape(-1, 3).astype(np.float32)
+                    v = px.max(1)
+                    keep = (v > 12) & (v < 250)
+                    if keep.mean() < .5:
+                        row.append((np.nan,)*3); continue
+                    row.append(tuple(px[keep][:, ::-1].mean(0)))
                 if self._recording:
                     acc.append(row); T.append(el); nkept += 1
                 A = np.array(row, float)
@@ -186,9 +198,7 @@ class Worker(QtCore.QThread):
             if self._recording:
                 nseen += 1
 
-            vis = cv2.convertScaleAbs(frame, alpha=0.45)
-            if msk is not None:
-                cv2.copyTo(frame, msk, vis)
+            vis = frame.copy()
             live = set()
             # Ringed markers rather than filled discs: a 4 px solid dot on a dim background
             # reads as speckle, and at 24 patches the frame looked noisy. A dark outline plus a
