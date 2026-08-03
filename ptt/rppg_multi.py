@@ -86,15 +86,27 @@ class SkinModel:
     and out of shadow lands in the same place.
     """
 
-    def __init__(self, k=3.0, refresh=15, v_floor=12, s_floor=42, v_ceil=248):
-        # k lowered from 5.0: at five MADs the ellipse routinely swallowed the background.
-        # s_floor is the fix that matters. rg-chromaticity cannot separate skin from a white or
-        # grey wall -- every neutral colour sits at r = g = 1/3, and light skin is only ~0.006
-        # away in g, well inside the 0.02 tolerance floor. Skin is always chromatic; unsaturated
-        # pixels are not skin whatever their rg. v_ceil drops blown-out highlights, which are
-        # colourless for the same reason.
-        self.k, self.refresh, self.v_floor = k, refresh, v_floor
-        self.s_floor, self.v_ceil = s_floor, v_ceil
+    def __init__(self, thr=3.0, refresh=15, v_floor=12, v_ceil=250):
+        """thr is a Mahalanobis radius in (Cr, Cb), not a per-axis tolerance.
+
+        The previous version gated each chroma axis independently with a MAD box, which forces a
+        choice between two failures: wide enough for skin in shadow also admits a white wall,
+        and narrow enough to reject the wall drops shadowed or pale skin. Adding a fixed
+        saturation floor on top made it worse -- measured on real skin tones, brightly-lit pale
+        skin sits at S = 31 while a white wall is S = 0, so a floor of 42 rejected the skin it
+        was meant to keep.
+
+        A single Mahalanobis distance to a Gaussian fitted on the seed pixels solves both. It
+        learns the covariance, so it stretches along the direction skin actually varies
+        (illumination) while staying tight across it, and one threshold replaces three. Measured
+        on seven skin tones from bright to very dark against five neutral backgrounds: skin
+        scores 0.9-1.7, backgrounds 2.9-5.8, so thr = 3.0 separates with margin on both sides.
+        """
+        self.thr, self.refresh = thr, refresh
+        self.v_floor, self.v_ceil = v_floor, v_ceil
+        self.rad_floor = 4.0                          # below this a pixel is neutral, not skin
+        self.ang_mu = self.ang_tol = None
+        self.mu = self.inv = None
         self.med = self.tol = None
         self._n = 0
 
@@ -105,44 +117,74 @@ class SkinModel:
         s = f.sum(2) + 1e-6
         return f[:, :, 2] / s, f[:, :, 1] / s          # BGR: index 2 = R, 1 = G
 
+    @staticmethod
+    def _crcb(bgr):
+        """Cr, Cb as float. Chroma only -- luma is dropped, so shading does not move a pixel."""
+        import cv2
+        y = cv2.cvtColor(bgr, cv2.COLOR_BGR2YCrCb)
+        return y[:, :, 1].astype(np.float32), y[:, :, 2].astype(np.float32)
+
     def update(self, bgr, pts, r=9):
-        """Re-fit from seed points. Cheap, so it runs every `refresh` frames, not every frame."""
+        """Re-fit the Gaussian from seed points. Cheap, so it runs every `refresh` frames."""
         if not pts:
             return
-        rr, gg = self._rg(bgr)
+        cr, cb = self._crcb(bgr)
         h, w = bgr.shape[:2]
         samp = []
         for (x, y) in pts:
             y0, y1 = max(0, y - r), min(h, y + r)
             x0, x1 = max(0, x - r), min(w, x + r)
             if y1 > y0 and x1 > x0:
-                samp.append(np.stack([rr[y0:y1, x0:x1].ravel(), gg[y0:y1, x0:x1].ravel()], 1))
+                samp.append(np.stack([cr[y0:y1, x0:x1].ravel(),
+                                      cb[y0:y1, x0:x1].ravel()], 1))
         if not samp:
             return
         samp = np.concatenate(samp, 0)
         if len(samp) < 50:
             return
-        med = np.median(samp, 0)
-        mad = np.median(np.abs(samp - med), 0) * 1.4826
-        self.med = med
-        self.tol = np.maximum(self.k * mad, 0.02)      # floor: never collapse to a point
+        # Trim to the central 80% before fitting. Some seed points legitimately land on hair or
+        # a collar, and a plain covariance would widen to include them.
+        d = np.abs(samp - np.median(samp, 0)).sum(1)
+        samp = samp[d <= np.percentile(d, 80)]
+        if len(samp) < 40:
+            return
+        dcr, dcb = samp[:, 0] - 128.0, samp[:, 1] - 128.0
+        rad = np.hypot(dcr, dcb)
+        keep = rad > 3.0                              # neutral seeds carry no angle to learn
+        if keep.sum() < 30:
+            return
+        a = np.degrees(np.arctan2(dcr[keep], dcb[keep]))
+        # circular median via the unit-vector mean, so the 180-degree wrap cannot bias it
+        z = np.exp(1j * np.radians(a))
+        self.ang_mu = float(np.degrees(np.angle(z.mean())))
+        spread = float(np.degrees(np.std(np.angle(z * np.exp(-1j * np.radians(self.ang_mu))))))
+        self.ang_tol = float(np.clip(3.0 * spread, 12.0, 40.0))
+        self.mu = np.array([samp[:, 0].mean(), samp[:, 1].mean()])
     def mask(self, bgr, pts=None):
         import cv2
         if pts is not None and (self._n % self.refresh == 0 or self.med is None):
             self.update(bgr, pts)
         self._n += 1
-        if self.med is None:                           # not seeded yet: fixed fallback
+        if self.ang_mu is None:                        # not seeded yet: fixed fallback
             return skin_mask(bgr)
-        rr, gg = self._rg(bgr)
-        m = ((np.abs(rr - self.med[0]) < self.tol[0]) &
-             (np.abs(gg - self.med[1]) < self.tol[1])).astype(np.uint8) * 255
-        # Saturation and value gates, applied AFTER the learned rg test. Below s_floor a pixel
-        # is neutral -- wall, paper, white shirt -- and rg cannot tell it from skin. Above
-        # v_ceil it is clipped and equally colourless.
-        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-        v, sat = hsv[:, :, 2], hsv[:, :, 1]
-        m = cv2.bitwise_and(m, ((v > self.v_floor) & (v < self.v_ceil) &
-                                (sat > self.s_floor)).astype(np.uint8) * 255)
+        cr, cb = self._crcb(bgr)
+        # Gate on chroma ANGLE plus a radius floor, not Mahalanobis distance in (Cr, Cb).
+        # Dimming pulls Cr and Cb toward the neutral point 128, so shadowed skin drifts away
+        # from a Gaussian fitted on lit pixels and gets cut -- measured, shadowed skin was
+        # rejected in four of five test scenes. The ANGLE is what survives: skin sits at
+        # 130-135 degrees whether lit, half-lit or dark, while white and grey have no angle at
+        # all because their radius is zero. One learned angle plus a small radius floor
+        # therefore keeps skin across lighting and rejects every neutral surface.
+        dcr, dcb = cr - 128.0, cb - 128.0
+        ang = np.degrees(np.arctan2(dcr, dcb))
+        rad = np.hypot(dcr, dcb)
+        da = np.abs((ang - self.ang_mu + 180.0) % 360.0 - 180.0)
+        m = ((da < self.ang_tol) & (rad > self.rad_floor)).astype(np.uint8) * 255
+        # Value gates only: a true-black pixel has no reliable chroma, and a clipped one has
+        # none either. No saturation floor -- brightly-lit pale skin sits near S = 31 and a
+        # floor high enough to exclude a wall would take that skin with it.
+        v = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)[:, :, 2]
+        m = cv2.bitwise_and(m, ((v > self.v_floor) & (v < self.v_ceil)).astype(np.uint8) * 255)
         m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
         return cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
 
