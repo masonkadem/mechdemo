@@ -121,7 +121,7 @@ def main():
 
             id_mae = float(np.abs(pf(Xid) - yid[:, 1]).mean())
             ood_mae = float(np.abs(pf(Xood) - yood[:, 1]).mean())
-            slope, frac = audit(pf, Xid, gid)
+            slope, frac, _n_subj = audit(pf, Xid, gid)   # audit also returns the subject count
             rows.append({"lambda": lam, "seed": seed, "id_mae": id_mae, "ood_mae": ood_mae,
                          "slope": slope, "frac_faithful": frac})
             print(f"{lam:7.2f} {seed:5d} {id_mae:8.2f} {ood_mae:9.2f} {slope:+10.4f} "
