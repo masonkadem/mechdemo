@@ -5,6 +5,7 @@
 import os
 from pathlib import Path
 
+import json
 import numpy as np
 import torch
 import torch.nn as nn
@@ -91,7 +92,7 @@ def main():
     slope = float(np.polyfit(SHIFT_MS, curve, 1)[0])
     scores = {a: acc_lin_roll(train_one(a, p)[0], *sample(1500, 7, p)) for a in ALPHAS}
 
-    fig, axes = plt.subplots(2, 4, figsize=(15, 7.2))
+    fig, axes = plt.subplots(3, 4, figsize=(15, 10.6))
 
     # ===== TOP ROW: synthetic =====
     def plabel(ax, s):
@@ -121,27 +122,79 @@ def main():
     ax.set_xlabel(r"$\alpha$ (arrival-time weight)"); ax.set_ylabel("normalized")
     ax.legend(fontsize=7.5, frameon=False); plabel(ax, "d")
 
-    # ===== BOTTOM ROW: real VitalDB =====
+
+    # ===== SECOND ROW: synthetic WAVEFORMS =====
+    # The scalar sandbox above hands PTT to the model as a number, so it never exercises foot
+    # detection -- the step that fails on real data. This row generates ECG+PPG with a known
+    # PTT-to-BP law and runs the identical pipeline used on VitalDB, so a null in the third row
+    # can be attributed to the models rather than to the instrument.
+    import synth_waveform_audit as SW
+    swres = json.loads((DATA / "synth_waveform_audit.json").read_text())
+    rngw = np.random.default_rng(3)
+
+    ax = axes[1, 0]
+    seg = SW.make_segment(rngw, hr=68, ptt_ms=210)
+    tw = np.arange(SW.L) / SW.FS
+    nw = int(4 * SW.FS)
+    ax.plot(tw[:nw], seg[:nw, 0] / seg[:nw, 0].std() + 3.2, color=NAVY, lw=1, label="ECG")
+    ax.plot(tw[:nw], seg[:nw, 1] / seg[:nw, 1].std(), color=RED, lw=1, label="PPG")
+    ax.set_xlabel("time (s)"); ax.set_yticks([])
+    ax.set_ylabel("generated")
+    ax.legend(fontsize=8, frameon=False, ncol=2); plabel(ax, "e")
+
+    ax = axes[1, 1]
+    _, ysw, pttw, _ = SW.make_dataset(600, 1.0, np.random.default_rng(11))
+    ax.scatter(pttw, ysw, s=4, alpha=.35, color=NAVY, edgecolors="none")
+    xsw = np.linspace(pttw.min(), pttw.max(), 40)
+    ax.plot(xsw, 130.0 - 0.22 * (xsw - 190.0), color=RED, lw=1.5)
+    ax.set_xlabel("injected PTT (ms)"); ax.set_ylabel("BP (mmHg)")
+    ax.text(.05, .07, "-0.22 mmHg/ms", transform=ax.transAxes, fontsize=8, color=RED)
+    plabel(ax, "f")
+
+    ax = axes[1, 2]
+    Xcw, _, ptw, _ = SW.make_dataset(400, 1.0, np.random.default_rng(99))
+    estw = mechlib.compute_ptt(Xcw, SW.FS) * 1000.0
+    okw = np.isfinite(estw)
+    ax.scatter(ptw[okw], estw[okw], s=5, alpha=.35, color=NAVY, edgecolors="none")
+    limw = [min(ptw[okw].min(), estw[okw].min()), max(ptw[okw].max(), estw[okw].max())]
+    ax.plot(limw, limw, color="k", lw=.9, ls="--")
+    rw = float(np.corrcoef(estw[okw], ptw[okw])[0, 1])
+    ax.set_xlabel("injected PTT (ms)"); ax.set_ylabel("measured PTT (ms)")
+    ax.text(.05, .90, f"r = {rw:+.2f}", transform=ax.transAxes, fontsize=9,
+            fontweight="bold")
+    plabel(ax, "g")
+
+    ax = axes[1, 3]
+    alw = [0.0, 0.25, 0.5, 0.75, 1.0]
+    slw = [swres["alphas"][str(a)]["slope"] for a in alw]
+    ax.plot(alw, slw, "-o", ms=4, color=NAVY)
+    ax.axhline(0, color="k", lw=.6, alpha=.4)
+    ax.set_xlabel(r"$\alpha$ (arrival-time weight)"); ax.set_ylabel("audit slope")
+    ax.text(.05, .10, f"r = {swres['slope_vs_alpha_r']:+.3f}", transform=ax.transAxes,
+            fontsize=9, fontweight="bold")
+    plabel(ax, "h")
+
+    # ===== THIRD ROW: real VitalDB waveforms, trained transformer =====
     d = mechlib.load_mini(str(DATA / "vitaldb_mini.npz"))
     Xte = mechlib.normalize(d["Xte"][:, :, [mechlib.ECG, mechlib.PPG]])
     yte = d["yte"]; fs = int(d["fs"]); t_axis = np.arange(Xte.shape[1]) / fs
     scalars = mechlib.compute_scalars(Xte, fs, mechlib.ECG, mechlib.PPG)
 
-    ax = axes[1, 0]
+    ax = axes[2, 0]
     ax.plot(t_axis, Xte[0, :, 0], color=NAVY, lw=1, label="ECG")
     ax.plot(t_axis, Xte[0, :, 1], color=RED, lw=1, label="PPG")
     ax.set_xlabel("time (s)"); ax.set_ylabel("z-scored")
-    ax.legend(fontsize=8, frameon=False); plabel(ax, "e")
+    ax.legend(fontsize=8, frameon=False); plabel(ax, "i")
 
     ckpt = torch.load(str(DATA / "dbp_transformer.pt"), map_location="cpu", weights_only=False)
     cfg, hist, sd = ckpt["config"], ckpt["history"], ckpt["state_dict"]
     tnet = mechlib.WaveTransformer(**cfg); tnet.load_state_dict(sd); tnet.eval()
 
-    ax = axes[1, 1]
+    ax = axes[2, 1]
     ax.plot(hist["train_mae"], color=NAVY, lw=1.3, label="train MAE")
     ax.plot(hist["val_mae"], color=RED, lw=1.3, ls="--", label="val MAE")
     ax.set_xlabel("epoch"); ax.set_ylabel("MAE (mmHg)")
-    ax.legend(fontsize=8, frameon=False); plabel(ax, "f")
+    ax.legend(fontsize=8, frameon=False); plabel(ax, "j")
 
     # layer features
     @torch.no_grad()
@@ -155,23 +208,23 @@ def main():
     stages = layers(Xte)
     xs = ["embed"] + [f"L{i+1}" for i in range(cfg["depth"])]
 
-    ax = axes[1, 2]
+    ax = axes[2, 2]
     r2_pat = [mechlib.linear_probe(f, scalars["pat"]) for f in stages]
     r2_per = [mechlib.linear_probe(f, scalars["period"]) for f in stages]
     ax.plot(range(len(xs)), r2_pat, "-o", ms=4, color=NAVY, lw=1.3, label="PAT (arrival time)")
     ax.plot(range(len(xs)), r2_per, "-o", ms=4, color=RED, lw=1.3, label="cardiac period")
     ax.axhline(0, color="#bbb", lw=.8); ax.set_xticks(range(len(xs)), xs, fontsize=8, rotation=15)
     ax.set_ylabel("probe $R^2$"); ax.set_xlabel("layer")
-    ax.legend(fontsize=8, frameon=False); plabel(ax, "g")
+    ax.legend(fontsize=8, frameon=False); plabel(ax, "k")
 
     @torch.no_grad()
     def predict_fn(Xd):
         return tnet(torch.tensor(Xd, dtype=torch.float32)).numpy()
     shift_ms, rcurve, rslope = mechlib.input_shift_audit(predict_fn, Xte, fs)
-    ax = axes[1, 3]
+    ax = axes[2, 3]
     ax.axvline(0, color=GREY, lw=.8, ls=":")
     ax.plot(shift_ms, rcurve, "-o", ms=4, color=NAVY)
-    ax.set_xlabel("imposed PPG shift (ms)"); ax.set_ylabel("pred. DBP (mmHg)"); plabel(ax, "h")
+    ax.set_xlabel("imposed PPG shift (ms)"); ax.set_ylabel("pred. DBP (mmHg)"); plabel(ax, "l")
 
     for ax in axes.ravel():
         ax.spines[["top", "right"]].set_visible(False)
