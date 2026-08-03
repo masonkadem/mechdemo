@@ -36,6 +36,8 @@ compile.log
 figures/*.png
 figures/*.pdf
 !figures/fig_main.*
+!figures/fig_shap_reference.*
+!figures/fig_feature_scatter.*
 !figures/fig_synth_wave.*
 !figures/fig_summary.*
 !figures/fig_drug_feedback.*
