@@ -86,8 +86,15 @@ class SkinModel:
     and out of shadow lands in the same place.
     """
 
-    def __init__(self, k=5.0, refresh=15, v_floor=12):
+    def __init__(self, k=3.0, refresh=15, v_floor=12, s_floor=42, v_ceil=248):
+        # k lowered from 5.0: at five MADs the ellipse routinely swallowed the background.
+        # s_floor is the fix that matters. rg-chromaticity cannot separate skin from a white or
+        # grey wall -- every neutral colour sits at r = g = 1/3, and light skin is only ~0.006
+        # away in g, well inside the 0.02 tolerance floor. Skin is always chromatic; unsaturated
+        # pixels are not skin whatever their rg. v_ceil drops blown-out highlights, which are
+        # colourless for the same reason.
         self.k, self.refresh, self.v_floor = k, refresh, v_floor
+        self.s_floor, self.v_ceil = s_floor, v_ceil
         self.med = self.tol = None
         self._n = 0
 
@@ -129,9 +136,13 @@ class SkinModel:
         rr, gg = self._rg(bgr)
         m = ((np.abs(rr - self.med[0]) < self.tol[0]) &
              (np.abs(gg - self.med[1]) < self.tol[1])).astype(np.uint8) * 255
-        # Only a true-black floor. Below this, rg-chromaticity is sensor noise, not colour.
-        v = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)[:, :, 2]
-        m = cv2.bitwise_and(m, (v > self.v_floor).astype(np.uint8) * 255)
+        # Saturation and value gates, applied AFTER the learned rg test. Below s_floor a pixel
+        # is neutral -- wall, paper, white shirt -- and rg cannot tell it from skin. Above
+        # v_ceil it is clipped and equally colourless.
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        v, sat = hsv[:, :, 2], hsv[:, :, 1]
+        m = cv2.bitwise_and(m, ((v > self.v_floor) & (v < self.v_ceil) &
+                                (sat > self.s_floor)).astype(np.uint8) * 255)
         m = cv2.morphologyEx(m, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
         return cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
 

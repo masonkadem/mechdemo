@@ -233,18 +233,19 @@ class LivePanel:
             med = float(np.median(self.hist)); sd = float(np.std(self.hist))
             # An offset means nothing if it is smaller than its own scatter.
             trust = sd < abs(med) and 5.0 <= abs(med) <= 120.0
-            cv2.putText(img, f"{med:+.0f}", (14, y + 34), cv2.FONT_HERSHEY_SIMPLEX, 1.0,
+            cv2.putText(img, f"{med:+.0f}", (14, y + 36), cv2.FONT_HERSHEY_SIMPLEX, .95,
                         (235, 235, 235) if trust else GREY, 2, cv2.LINE_AA)
-            cv2.putText(img, f"+/- {sd:.0f} ms", (104, y + 34), cv2.FONT_HERSHEY_SIMPLEX, .5,
+            cv2.putText(img, "ms", (96, y + 36), cv2.FONT_HERSHEY_SIMPLEX, .45,
                         GREY, 1, cv2.LINE_AA)
-            msg = ("unstable: spread exceeds the value" if sd >= abs(med) else
-                   "outside 5-120 ms: artifact" if not (5.0 <= abs(med) <= 120.0) else
-                   "stable  (still contains fixed delay)")
-            cv2.putText(img, msg, (14, y + 56), cv2.FONT_HERSHEY_SIMPLEX, .42,
+            cv2.putText(img, f"+/- {sd:.0f}", (PANEL_W - 86, y + 36),
+                        cv2.FONT_HERSHEY_SIMPLEX, .5, GREY, 1, cv2.LINE_AA)
+            msg = ("unstable: spread exceeds value" if sd >= abs(med) else
+                   "outside 5-120 ms" if not (5.0 <= abs(med) <= 120.0) else "stable")
+            cv2.putText(img, msg, (14, y + 58), cv2.FONT_HERSHEY_SIMPLEX, .42,
                         GREY if trust else (80, 165, 235), 1, cv2.LINE_AA)
             hs = np.array(self.hist[-HIST:], float)     # sparkline of recent estimates
             if len(hs) > 2 and np.ptp(hs) > 1e-9:
-                x0, x1, yb, hh2 = 14, PANEL_W - 14, y + 106, 34
+                x0, x1, yb, hh2 = 14, PANEL_W - 14, y + 112, 30
                 xs = np.linspace(x0, x1, len(hs))
                 ys = yb - (hs - hs.min()) / np.ptp(hs) * hh2
                 cv2.polylines(img, [np.int32(np.stack([xs, ys], 1))], False, NAVY, 1,
@@ -254,8 +255,6 @@ class LivePanel:
         else:
             put("collecting ...", y + 30, GREY)
 
-        cv2.putText(img, f"{fs:.1f} fps   {1000/fs:.0f} ms/frame", (14, h - 32),
+        cv2.putText(img, f"{fs:.1f} fps   {1000/fs:.0f} ms/frame", (14, h - 16),
                     cv2.FONT_HERSHEY_SIMPLEX, .42, GREY, 1, cv2.LINE_AA)
-        cv2.putText(img, "transit is sub-frame: read CHANGES, not the value", (14, h - 14),
-                    cv2.FONT_HERSHEY_SIMPLEX, .38, GREY, 1, cv2.LINE_AA)
         return img
