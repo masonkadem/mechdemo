@@ -19,6 +19,7 @@ between conditions carries evidence.
 """
 import sys
 import time
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -198,7 +199,12 @@ class Worker(QtCore.QThread):
                 if self._recording:
                     acc.append(row); T.append(el); nkept += 1
                 A = np.array(row, float)
-                with np.errstate(invalid="ignore"):
+                # An all-nan group is the normal case, not an error: the hand is simply out of
+                # frame or unlit, and the panel is built to show that. np.errstate does not cover
+                # it -- nanmean raises a RuntimeWarning through the warnings module, so a hand
+                # off camera spammed stderr once per frame.
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", category=RuntimeWarning)
                     pr = np.nanmean(A[PM], 0) if PM.any() else np.full(3, np.nan)
                     ds = np.nanmean(A[DM], 0) if DM.any() else np.full(3, np.nan)
                 panel.push(pr, ds, time.time() - t_wall)
