@@ -1,0 +1,22 @@
+{
+  "MAE (no labels)": {
+    "r_pat_within": 0.4323685727326801,
+    "r_dbp_within": 0.28998799519807916,
+    "n_subj": 60,
+    "dim": 128
+  },
+  "supervised": {
+    "r_pat_within": 0.1960960201778697,
+    "r_dbp_within": 0.31846338535414165,
+    "n_subj": 60,
+    "dim": 128
+  },
+  "_reference": {
+    "best_ecgppg_estimator_r": 0.183,
+    "ceiling_gain_mmHg": 0.23,
+    "ceiling_ci": [
+      0.13,
+      0.32
+    ]
+  }
+}
