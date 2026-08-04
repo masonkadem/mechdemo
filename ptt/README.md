@@ -6,7 +6,14 @@ blood-pressure faithfulness work in the parent directory.
 
 ## Run it
 
-Double-click **`run_app.command`** (macOS). First launch fetches a 5.5 MB pose model.
+Double-click **`run_app.command`** (macOS). First launch fetches two MediaPipe models into
+`models/` — pose (5.5 MB) and hand (7.5 MB). Both are gitignored binaries, so a fresh clone has
+neither and the launcher is what puts them there.
+
+The hand model is not a nicety. Pose landmark 20 is the index *knuckle*, so without the hand
+landmarker the fingertips are never sampled — and the fingertips are the densest capillary bed
+on the body and the strongest rPPG signal available. If it is missing the app now says
+"fingertips unavailable" rather than quietly dropping the distal site.
 
 The window opens in **preview**, which runs the whole pipeline and saves nothing. Wait until
 the sites you need are lit and a pulse is visible in the panel, then press **Record**. A clean

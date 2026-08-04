@@ -116,8 +116,13 @@ class Worker(QtCore.QThread):
             # capillary bed on the body and the strongest rPPG signal available.
             try:
                 hlm, _ = HS.make_hand_landmarker()
-            except Exception:
+            except Exception as e:                  # noqa: BLE001
+                # Do NOT fail silently. A bare `except: hlm = None` here meant a missing
+                # hand_landmarker.task -- which is gitignored, so absent on every fresh clone --
+                # quietly dropped the fingertip sites, the strongest signal in the whole rig,
+                # with nothing on screen to say why the distal trace never appeared.
                 hlm = None
+                self.status.emit(f"fingertips unavailable: {e}")
             cap = rppg_cam.open_camera(0, 640, 480, 60)
         except Exception as e:                      # noqa: BLE001
             self.finished_run.emit(self.tag, False, str(e))
