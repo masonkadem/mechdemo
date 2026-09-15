@@ -152,6 +152,7 @@ class Worker(QtCore.QThread):
         self.path_manual = float("nan")
         self.method = MTH.DEFAULT
         self.propagation = True
+        self.side = "right"                 # updated per frame from which wrist the hand matches
         self.live = {}
 
     def start_recording(self):
@@ -232,6 +233,13 @@ class Worker(QtCore.QThread):
                              data=np.ascontiguousarray(frame[:, :, ::-1])),
                     int((time.time() - t_wall) * 1000))
                 tip_pts, _td, _ts = HS.hand_points(hres, w, h)
+                # Measure the path along the arm the fingertips actually belong to, instead of
+                # assuming the right one. Sticky: a frame that cannot decide keeps the last
+                # decision rather than flipping the path length mid-recording.
+                sd = HS.hand_side(hres, res.pose_landmarks[0] if res.pose_landmarks else None,
+                                  w, h)
+                if sd:
+                    self.side = sd
             pts = list(pts) + list(tip_pts)
             # Path length from pose world landmarks (metres), so the wave speed uses THIS
             # subject's arm rather than a nominal one -- arm length varies about 20% across
@@ -241,7 +249,7 @@ class Worker(QtCore.QThread):
                 # The DIFFERENTIAL path, not the anatomical face-to-hand route: the lag is a
                 # difference of two arrival times from the heart, so dividing the full
                 # face-to-hand distance by it inflated the wave speed to ~25 m/s.
-                panel.set_path(HS.differential_path_cm(res.pose_world_landmarks[0]))
+                panel.set_path(HS.differential_path_cm(res.pose_world_landmarks[0], self.side))
             elif np.isfinite(self.path_manual):
                 panel.set_path(None)               # let a manual value stand with no pose fit
             vis_pts = [p for p in pts if p is not None]

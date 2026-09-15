@@ -39,6 +39,17 @@ def open_camera(cam=0, width=640, height=480, fps=60):
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
             cap.set(cv2.CAP_PROP_FPS, fps)
+            # One-frame queue. Frame timestamps are taken with time.time() just after read(),
+            # so they date the moment PYTHON received the frame, not the moment it was exposed.
+            # With a multi-frame driver queue that gap is both large and VARIABLE, and the
+            # variance lands directly on a sub-frame lag estimate that is only tens of ms wide.
+            # A depth-1 queue also means read() returns the newest frame rather than the oldest,
+            # so a slow pipeline drops frames instead of falling progressively further behind.
+            # Not honoured by every backend, hence best-effort.
+            try:
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception:                   # noqa: BLE001 -- unsupported prop is not fatal
+                pass
             ok, _ = cap.read()
             if ok:
                 return cap

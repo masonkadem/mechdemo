@@ -116,14 +116,41 @@ def schema():
     return out
 
 
-def make_landmarker():
+def pose_model_path():
+    """The pose model to use, preferring the variant named by $POSE_MODEL.
+
+    Landmarks place every sampling patch and, through the world landmarks, set the path length
+    that scales the wave speed -- so landmark jitter shows up twice, as ROI noise and as a moving
+    distance. `lite` is the weakest of the three MediaPipe variants; `full` is a better default
+    and `heavy` better still where the CPU is available.
+
+    Falls back to any model that IS present rather than failing, so an existing checkout keeps
+    working after this change without a re-fetch.
+    """
+    import os
+    want = os.environ.get("POSE_MODEL", "full")
+    cands = [MODEL.parent / f"pose_landmarker_{want}.task",
+             MODEL.parent / f"pose_landmarker_full.task",
+             MODEL.parent / f"pose_landmarker_heavy.task",
+             MODEL.parent / f"pose_landmarker_lite.task",
+             MODEL]
+    for p in cands:
+        if p.exists():
+            return p
+    raise RuntimeError(
+        f"no pose model found in {MODEL.parent}. Run run_app.command, which fetches it, "
+        f"or set POSE_MODEL=lite|full|heavy.")
+
+
+def make_landmarker(model=None):
     import mediapipe as mp
     from mediapipe.tasks import python as mpp
     from mediapipe.tasks.python import vision
-    if not MODEL.exists():
-        raise RuntimeError(f"missing pose model at {MODEL}")
+    path = Path(model) if model else pose_model_path()
+    if not path.exists():
+        raise RuntimeError(f"missing pose model at {path}")
     opts = vision.PoseLandmarkerOptions(
-        base_options=mpp.BaseOptions(model_asset_path=str(MODEL)),
+        base_options=mpp.BaseOptions(model_asset_path=str(path)),
         running_mode=vision.RunningMode.VIDEO, num_poses=1,
         min_pose_detection_confidence=0.5, min_tracking_confidence=0.5)
     return vision.PoseLandmarker.create_from_options(opts), mp

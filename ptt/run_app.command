@@ -19,9 +19,27 @@ fetch () {   # name, path, url, size
   echo "Download failed for the $1 model."
   return 1
 }
-fetch pose models/pose_landmarker.task \
-  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task" \
-  "5.5 MB" || { read -r -p "Return to close ... "; exit 1; }
+# Pose model variant. `full` by default rather than `lite`: the landmarks place every sampling
+# patch, so landmark jitter becomes ROI jitter, which becomes signal noise -- and the world
+# landmarks also set the path length that scales the wave speed. lite is the least accurate of
+# the three MediaPipe offers and was costing accuracy in exactly the two places it matters.
+#   POSE_MODEL=lite   5.5 MB   fastest, weakest
+#   POSE_MODEL=full   9.0 MB   the default here
+#   POSE_MODEL=heavy   29 MB   best landmarks, noticeably more CPU per frame
+POSE_MODEL="${POSE_MODEL:-full}"
+case "$POSE_MODEL" in
+  lite)  POSE_SIZE="5.5 MB" ;;
+  full)  POSE_SIZE="9.0 MB" ;;
+  heavy) POSE_SIZE="29 MB"  ;;
+  *) echo "POSE_MODEL must be lite, full or heavy (got '$POSE_MODEL')"; exit 1 ;;
+esac
+# Variant is part of the filename, so switching does not silently reuse the previous model and
+# leave you comparing recordings made with different landmarkers.
+POSE_TASK="models/pose_landmarker_${POSE_MODEL}.task"
+fetch "pose ($POSE_MODEL)" "$POSE_TASK" \
+  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_${POSE_MODEL}/float16/1/pose_landmarker_${POSE_MODEL}.task" \
+  "$POSE_SIZE" || { read -r -p "Return to close ... "; exit 1; }
+export POSE_MODEL
 fetch hand models/hand_landmarker.task \
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task" \
   "7.5 MB" || echo "  -> fingertip sites will be unavailable; the app will say so."

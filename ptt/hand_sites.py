@@ -85,6 +85,38 @@ def hand_points(result, w, h, groups=GROUPS):
     return pts, np.array([d for _, d in sch]), [s for s, _ in sch]
 
 
+def hand_side(hand_result, pose_lms, w, h):
+    """Which arm the detected hand belongs to: 'left', 'right', or None.
+
+    Decided by matching the hand's WRIST to the nearer of the two pose wrists (landmark 15 left,
+    16 right) in pixels -- NOT by MediaPipe's handedness flag. That flag is documented as
+    assuming a mirrored, selfie-view input, while this pipeline feeds the raw unflipped frame, so
+    reading it directly gives the wrong side and reading it inverted breaks the moment someone
+    adds a flip to the preview. Nearest-wrist is invariant to that whole question.
+
+    Why it matters: the path length is measured along ONE arm. Sampling the left fingertips while
+    measuring the right arm's length silently mixes two limbs, and if the unsampled arm is
+    partly occluded its world landmarks can still return a plausible-looking length -- a wrong
+    number with nothing on screen to flag it. Arm lengths are near-symmetric so the error is
+    small, but it is avoidable and it is free to avoid.
+    """
+    if not getattr(hand_result, "hand_landmarks", None) or pose_lms is None:
+        return None
+    try:
+        wrist = hand_result.hand_landmarks[0][0]
+        hx, hy = wrist.x * w, wrist.y * h
+        d = {}
+        for side, i in (("left", 15), ("right", 16)):
+            p = pose_lms[i]
+            d[side] = (p.x * w - hx) ** 2 + (p.y * h - hy) ** 2
+    except (IndexError, TypeError, AttributeError):
+        return None
+    side = min(d, key=d.get)
+    # A hand that is far from BOTH pose wrists is not a match for either; better to report no
+    # side and keep the previous path than to attach the fingertips to an arbitrary arm.
+    return side if d[side] <= (0.25 * max(w, h)) ** 2 else None
+
+
 def null_control(sigs, fs, sites=("forehead", "cheek_l", "cheek_r")):
     """Pairwise lag among proximal sites, which should all be near zero.
 
