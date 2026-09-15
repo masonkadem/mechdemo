@@ -370,8 +370,18 @@ class Worker(QtCore.QThread):
         """Local clock time, or None. Blank-safe so a missing anchor cannot invent a time."""
         if t is None or not np.isfinite(t):
             return None
+        # Round to milliseconds FIRST, then split. Rounding the fraction separately is what
+        # creates the .9996 trap: it rounds up to 1000, has to be wrapped to 000 to stay
+        # three digits, and the seconds field never learns it should have advanced -- a
+        # one-second error, in the one component that is hardest to notice is wrong. Rounding
+        # the whole timestamp lets localtime carry into the next second by itself.
+        #
+        # Rounded rather than truncated so this agrees exactly with _stem() and
+        # export_csv._clock_ms(); truncating here made the filename say ...-527 while
+        # clock_record said ...526 for the same instant.
+        t = round(float(t), 3)
         s = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t))
-        return s + f".{int((t % 1) * 1000):03d}" if ms else s
+        return s + f".{int(round((t % 1) * 1000)):03d}" if ms else s
 
     def _stem(self):
         """Filename stem: subject, condition, and the WALL-CLOCK TIME the recording started.
@@ -390,7 +400,12 @@ class Worker(QtCore.QThread):
         in the json remain the unambiguous record for anything automated.
         """
         t = self.t_rec_wall if np.isfinite(self.t_rec_wall) else time.time()
-        when = time.strftime("%Y%m%d-%H%M%S", time.localtime(t))
+        # Milliseconds included: two recordings started in the same second would otherwise
+        # collide, and more importantly the filename is then the same instant, to the same
+        # resolution, as the sync marks and the per-sample timestamps in the export.
+        t = round(float(t), 3)          # round before splitting; see _iso for why
+        when = (time.strftime("%Y%m%d-%H%M%S", time.localtime(t))
+                + f"-{int(round((t % 1) * 1000)):03d}")
         base = f"{self.subject}_{self.tag}_{when}" if self.subject else f"{self.tag}_{when}"
         if not (DATA / f"rppg_pose_{base}.json").exists():
             return base
@@ -491,7 +506,12 @@ class Worker(QtCore.QThread):
                  # these the npz holds only one method's output, so a recording could never be
                  # re-analysed with POS or ICA afterwards -- a whole session would have to be
                  # repeated to change that choice. ~1.5 MB for a 60 s run, which is nothing.
-                 raw_rgb=acc, t=T, method=self.method,
+                 raw_rgb=acc, t=T, tu=tu, method=self.method,
+                 # Wall-clock anchors travel WITH the signals, not only in the sibling json, so
+                 # an exporter can put an absolute millisecond timestamp on every sample without
+                 # having to find and parse a second file.
+                 t_wall_capture=self.t_wall, t_wall_record=self.t_rec_wall,
+                 warmup_s=P.WARMUP_S,
                  **stages_all.get(best, {}))
         msg = (f"saved as <b>rppg_pose_{stem}</b><br>HR {cons:.0f} bpm, "
                f"{ok.sum()}/{len(ok)} sites accepted at {fs:.0f} fps")

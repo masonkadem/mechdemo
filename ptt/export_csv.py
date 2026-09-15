@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -72,6 +73,18 @@ def _f(v, key=""):
             return ""
         return f"{float(v):.3f}" if key.startswith("t_") else f"{float(v):.6g}"
     return v
+
+
+def _clock_ms(t):
+    """Local time of day to the millisecond, or blank. The human-readable alignment column."""
+    if t is None or not np.isfinite(t):
+        return ""
+    # Rounded to ms before splitting, so a .9996 fraction carries into the next second instead
+    # of wrapping to .000 and leaving the seconds field a full second behind. Must stay identical
+    # to app_ptt.Worker._iso and to the timestamp in the recording's filename.
+    t = round(float(t), 3)
+    return (time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t))
+            + f".{int(round((t % 1) * 1000)):03d}")
 
 
 def _write(path, cols, rows):
@@ -149,11 +162,25 @@ def recording_rows(paths=None):
 
 
 def export_waveform(npz_path, outdir=EXPORT):
-    """Per-sample signals for one recording: t_s, then one column per site.
+    """Per-sample signals for one recording, timestamped in absolute local time.
+
+    Three time columns, because alignment needs different things at different moments:
+
+      t_s      seconds from the start of CAPTURE, matching the timebase the sync marks and the
+               cuff readings are recorded in. This is the join key.
+      t_wall   unix seconds with millisecond resolution -- unambiguous, timezone-free, and what
+               anything automated should use.
+      clock    local time of day to the millisecond, for reading against a cuff printout or a
+               lab notebook by eye.
+
+    t_s previously started at 0, which was wrong by the warm-up: the signals sit on a grid that
+    begins at T[0] >= WARMUP_S (3 s of auto-exposure settling is discarded), so every sample was
+    labelled about three seconds earlier than it happened. Sync marks are stored in capture time
+    and so were misaligned against these waveforms by that same constant -- invisible, because a
+    3 s error still looks like a plausible time. The offset is now taken from the saved `t`.
 
     Column names carry the site's segment AND its nominal arterial distance, because the column
-    order alone does not say which trace is proximal -- and a file whose columns cannot be
-    identified without the source code is not really an export.
+    order alone does not say which trace is proximal.
     """
     with np.load(npz_path, allow_pickle=False) as z:
         sigs = z["sigs"]
@@ -162,8 +189,20 @@ def export_waveform(npz_path, outdir=EXPORT):
         dist = z["dist"] if "dist" in z else np.full(len(sigs), np.nan)
         acc = z["accepted"] if "accepted" in z else np.ones(len(sigs), bool)
         quals = z["quals"] if "quals" in z else np.full(len(sigs), np.nan)
+        # Prefer the exact uniform grid the signals were built on; fall back to the raw frame
+        # times, then to a bare index. Older recordings carry none of these, and they get the
+        # old behaviour with `t_s` starting at 0 -- flagged in the sites file rather than guessed.
+        tu = z["tu"] if "tu" in z else (z["t"] if "t" in z else None)
+        t_cap = float(z["t_wall_capture"]) if "t_wall_capture" in z else float("nan")
 
     n = sigs.shape[1]
+    if tu is not None and len(tu) == n:
+        t_rel = np.asarray(tu, float)
+    elif tu is not None and len(tu) >= 1:
+        t_rel = float(tu[0]) + np.arange(n) / fs
+    else:
+        t_rel = np.arange(n) / fs
+
     names = [f"s{i:02d}_{seg[i] if i < len(seg) else ''}_{dist[i]:.0f}cm"
              if i < len(dist) and np.isfinite(dist[i])
              else f"s{i:02d}_{seg[i] if i < len(seg) else ''}"
@@ -172,11 +211,15 @@ def export_waveform(npz_path, outdir=EXPORT):
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", newline="") as fh:
         wr = csv.writer(fh)
-        # A header comment would break strict CSV readers, so provenance goes in sibling rows of
-        # the sites table instead -- accepted/quality per column, keyed by the same name.
-        wr.writerow(["t_s"] + names)
+        # A header comment would break strict CSV readers, so provenance goes in the sibling
+        # sites table instead -- accepted/quality per column, keyed by the same name.
+        wr.writerow(["t_s", "t_wall", "clock"] + names)
         for k in range(n):
-            wr.writerow([f"{k / fs:.6f}"] + [f"{v:.6g}" for v in sigs[:, k]])
+            tw = t_cap + t_rel[k]
+            wr.writerow([f"{t_rel[k]:.6f}",
+                         f"{tw:.3f}" if np.isfinite(tw) else "",
+                         _clock_ms(tw)]
+                        + [f"{v:.6g}" for v in sigs[:, k]])
 
     sites = Path(outdir) / f"{Path(npz_path).stem}_sites.csv"
     _write(sites, ["column", "index", "segment", "distance_cm", "accepted", "quality"],
