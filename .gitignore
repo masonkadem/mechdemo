@@ -70,3 +70,13 @@ TABLE_full.log
 # 5.8 MB model, fetched on first run by the launchers
 ptt/models/*.task
 models/*.task
+
+# Lab-session output from ptt/app_ptt.py. Session files and CSV exports carry SUBJECT BLOOD
+# PRESSURE readings, so they are human-subject data and do not belong in a shared repo by
+# default; the npz also now carries raw per-channel RGB and runs to a few MB per recording.
+# All of it is either regenerable (export/) or raw record (data/). Force-add a specific
+# result with `git add -f` if you deliberately want it in the history.
+ptt/data/session_*.json
+ptt/data/rppg_pose_*.json
+ptt/data/rppg_pose_*.npz
+ptt/export/

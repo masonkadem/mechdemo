@@ -164,3 +164,50 @@ def head_to_hand_cm(world_lms, side="right"):
     if not (5.0 < neck < 40.0):
         return float("nan")
     return neck + arm
+
+
+def differential_path_cm(world_lms, side="right"):
+    """The path length the face-to-fingertip LAG actually corresponds to, in cm.
+
+    This is the correction head_to_hand_cm does not make, and it matters for any wave speed.
+
+    The pulse does not travel from the face to the hand. It leaves the heart once and arrives at
+    both sites independently, so the measured lag is a DIFFERENCE of two arrival times:
+
+        lag = (heart -> fingertip) / PWV_arm  -  (heart -> face) / PWV_head
+
+    Dividing the anatomical face-to-hand distance by that lag therefore asks the wave to cover a
+    route it never took, and inflates the speed roughly twofold -- which is why the panel reported
+    ~25 m/s against a physiological 4-12. The right numerator is the DIFFERENCE in path lengths:
+
+        (shoulder-midpoint -> fingertip)  -  (shoulder-midpoint -> ear)
+
+    The shoulder midpoint stands in for the aortic arch. It is a few cm high and slightly
+    anterior, but it is the same reference on BOTH sides of the subtraction, so most of the error
+    cancels rather than accumulating.
+
+    One honest caveat this cannot fix: the two routes have different stiffnesses -- the head route
+    is largely elastic aorta and carotid (~5-7 m/s), the arm route muscular brachial and radial
+    (~8-12 m/s) -- so a single PWV from this ratio is a path-weighted blend, not the arm's own
+    wave speed. Treat it as an index that should MOVE with pressure, not as a regional PWV.
+
+    Returns nan when the landmarks are missing or implausible.
+    """
+    arm = arm_path_cm(world_lms, side)
+    if not np.isfinite(arm):
+        return float("nan")
+    try:
+        sh_l = np.array([world_lms[11].x, world_lms[11].y, world_lms[11].z])
+        sh_r = np.array([world_lms[12].x, world_lms[12].y, world_lms[12].z])
+        ear = np.array([world_lms[8].x, world_lms[8].y, world_lms[8].z])
+    except (IndexError, TypeError):
+        return float("nan")
+    mid = (sh_l + sh_r) / 2.0
+    # The arm chain starts at the shoulder JOINT, so reaching it from the midpoint adds half the
+    # biacromial width. Without this the hand route is short by ~18 cm while the head route is not.
+    half_shoulder = float(np.linalg.norm(sh_r - sh_l)) / 2.0 * 100.0
+    to_face = float(np.linalg.norm(ear - mid)) * 100.0
+    if not (5.0 < half_shoulder < 30.0 and 5.0 < to_face < 40.0):
+        return float("nan")
+    d = half_shoulder + arm - to_face
+    return d if 15.0 < d < 110.0 else float("nan")

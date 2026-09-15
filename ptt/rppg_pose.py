@@ -182,9 +182,98 @@ def plausible(x, fs, consensus_hr=None):
     snr = float(P[m][k] / (np.median(P[m]) + 1e-15))
     ok = (snr >= MIN_SNR and frac >= MIN_PEAK_FRAC and 40 <= hr <= 180
           and (not np.isfinite(ibisd) or ibisd <= IBI_SD_MAX_MS))
-    if ok and consensus_hr is not None:
+    # A NON-FINITE consensus means there was no consensus to agree with, not that this site
+    # disagrees with it. `is not None` did not catch that: the caller computes the consensus as a
+    # median over sites clearing MIN_SNR, which is nan when NONE of them do, and `abs(hr - nan)
+    # <= 12` is False for every site -- so one dim recording rejected all 34 sites including
+    # flawless ones, and reported "0 sites passed quality gates" as though the data were bad.
+    if ok and consensus_hr is not None and np.isfinite(consensus_hr):
         ok = abs(hr - consensus_hr) <= HR_TOL_BPM
     return bool(ok), hr, snr, ibisd
+
+
+def consensus_hr(hrs, quals):
+    """Median HR across sites that clear the SNR gate, or None when none do.
+
+    Returns None rather than nan on purpose. nan is not a consensus -- it is the ABSENCE of one --
+    and passing it on as a number made every site fail the agreement gate (see plausible). None
+    says "do not apply this gate", which is what no consensus should mean.
+
+    Only sites above MIN_SNR get a vote, so a noise-dominated patch cannot drag the reference HR
+    onto a harmonic and take the good sites out with it.
+    """
+    hrs, quals = np.asarray(hrs, float), np.asarray(quals, float)
+    m = np.isfinite(hrs) & (quals > MIN_SNR)
+    return float(np.median(hrs[m])) if m.any() else None
+
+
+GATE_FIX = {
+    "snr":   "signal too weak -- more diffuse light on the site, and check it is not in shadow",
+    "frac":  "no dominant beat frequency -- usually motion; brace the arm and hold still",
+    "hr":    "implied rate outside 40-180 bpm -- almost always a harmonic lock, not a real rate",
+    "ibi":   "beat-to-beat interval scatter too high -- motion or a flickering light source",
+    "cons":  "disagrees with the other sites' rate -- this patch is tracking something else",
+    "short": "not enough usable frames at this site -- it was out of frame or clipped",
+}
+
+
+def gate_detail(x, fs, cons=None):
+    """Every gate's measured value and verdict, so a rejection can be acted on.
+
+    plausible() answers yes/no, which is all the pipeline needs but useless at the bench: "0 of
+    34 sites passed" does not say whether to add light, stop moving, or move the hand into frame.
+    This returns the numbers behind the same decision, and `fail` lists the gates that bit.
+    """
+    from scipy.signal import welch
+    d = {"n": len(x), "snr": 0.0, "frac": 0.0, "hr": np.nan, "ibi_sd": np.nan, "fail": []}
+    if len(x) < int(6 * fs) or np.std(x) < 1e-12:
+        d["fail"].append("short")
+        return d
+    f, P = welch(x, fs, nperseg=min(len(x), int(6 * fs)))
+    m = (f > R.BAND[0]) & (f < R.BAND[1])
+    if not m.any() or P[m].sum() <= 0:
+        d["fail"].append("short")
+        return d
+    k = int(np.argmax(P[m]))
+    from rppg_sota import instantaneous_hr
+    _, _, _, ibisd = instantaneous_hr(x, fs)
+    d.update(hr=float(f[m][k] * 60), frac=float(P[m][k] / P[m].sum()),
+             snr=float(P[m][k] / (np.median(P[m]) + 1e-15)), ibi_sd=ibisd)
+    if d["snr"] < MIN_SNR:
+        d["fail"].append("snr")
+    if d["frac"] < MIN_PEAK_FRAC:
+        d["fail"].append("frac")
+    if not (40 <= d["hr"] <= 180):
+        d["fail"].append("hr")
+    if np.isfinite(ibisd) and ibisd > IBI_SD_MAX_MS:
+        d["fail"].append("ibi")
+    if not d["fail"] and cons is not None and np.isfinite(cons) \
+            and abs(d["hr"] - cons) > HR_TOL_BPM:
+        d["fail"].append("cons")
+    return d
+
+
+def gate_report(details, seg=None, need=6):
+    """Plain-language account of why a recording did or did not pass, and what to change.
+
+    Ordered by how many sites each gate cost, because the gate that bit most is the one worth
+    acting on -- and reporting the single worst site instead sent you chasing the wrong fix.
+    """
+    from collections import Counter
+    n_ok = sum(1 for d in details if not d["fail"])
+    lines = [f"{n_ok}/{len(details)} sites passed (need {need})"]
+    if n_ok >= need:
+        return lines[0], lines
+    c = Counter(g for d in details for g in d["fail"])
+    for gate, k in c.most_common():
+        lines.append(f"  {k:>2d} site(s): {GATE_FIX.get(gate, gate)}")
+    snrs = sorted((d["snr"] for d in details), reverse=True)[:3]
+    lines.append(f"  best site SNR {', '.join(f'{s:.1f}' for s in snrs)} "
+                 f"(need {MIN_SNR:.0f})")
+    if seg is not None:
+        best = max(range(len(details)), key=lambda i: details[i]["snr"])
+        lines.append(f"  strongest site: {seg[best]} at SNR {details[best]['snr']:.1f}")
+    return lines[0], lines
 
 
 WIN = "pose-tracked rPPG"
@@ -402,18 +491,26 @@ def main():
         print(f"[fig] stage figure uses point {best} ({seg[best]}, SNR {quals[best]:.1f})",
               flush=True)
 
-    cons = float(np.median(hrs[np.isfinite(hrs) & (quals > MIN_SNR)])) \
-        if np.isfinite(hrs).any() else np.nan
+    cons = consensus_hr(hrs, quals)
     acc_ok = np.zeros(len(filtered), bool)
+    details = []
     for i, x in enumerate(filtered):
-        if x is not None:
-            acc_ok[i], _, _, _ = plausible(x, fs, cons)
-    print(f"\n[qc] consensus HR {cons:.1f} bpm")
+        if x is None:
+            details.append({"n": 0, "snr": 0.0, "frac": 0.0, "hr": np.nan,
+                            "ibi_sd": np.nan, "fail": ["short"]})
+            continue
+        acc_ok[i], _, _, _ = plausible(x, fs, cons)
+        details.append(gate_detail(x, fs, cons))
+    print("\n[qc] consensus HR " + (f"{cons:.1f} bpm" if cons is not None
+                                    else "NONE -- agreement gate not applied"))
     print(f"[qc] accepted {acc_ok.sum()}/{len(filtered)} points "
           f"({100*acc_ok.mean():.0f}%) as physiologically plausible", flush=True)
     if acc_ok.sum() < 6:
-        print("[qc] too few accepted points -- improve lighting, keep the arm still and in "
-              "frame, and retry"); return
+        # Say WHICH gate bit and what to change. "improve lighting, keep still and retry" was
+        # three guesses at once, and two of them are usually wrong.
+        for line in gate_report(details, seg)[1]:
+            print(f"[qc] {line}")
+        return
 
     # ---- arrival time vs anatomical distance --------------------------------
     ref = int(np.argmax(np.where(acc_ok, quals, -1)))

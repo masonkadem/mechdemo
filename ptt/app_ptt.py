@@ -26,6 +26,9 @@ import numpy as np
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
+import bp_model as BP
+import rppg_methods as MTH
+
 ROOT = Path(__file__).resolve().parent
 DATA, FIGS = ROOT / "data", ROOT / "figures"
 
@@ -48,11 +51,20 @@ QPushButton:disabled { color:#6b7280; border-color:#2a2f38; }
 QPushButton#rec  { background:#2e7d46; border-color:#3c9c58; font-weight:700; }
 QPushButton#rec:hover { background:#359b53; }
 QPushButton#stop { background:#a3342a; border-color:#c2453a; font-weight:700; }
-QComboBox, QSpinBox { background:#1e2229; border:1px solid #333a45; border-radius:6px;
-                      padding:6px 8px; }
+QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit { background:#1e2229; border:1px solid #333a45;
+                      border-radius:6px; padding:6px 8px; }
 QLabel#hint   { color:#9aa0a6; }
 QLabel#big    { font-size:34px; font-weight:700; }
 QLabel#unit   { color:#9aa0a6; }
+QPushButton#sync { background:#1d3a5c; border-color:#2f6096; font-weight:700; font-size:15px;
+                   padding:14px 16px; }
+QPushButton#sync:hover { background:#24487093; }
+QFrame#card   { background:#1b1f26; border:1px solid #2c3038; border-radius:8px; }
+QLabel#rlabel { color:#8a9099; font-size:10px; font-weight:600; }
+QLabel#rval   { font-size:27px; font-weight:700; color:#e8e8ea; }
+QLabel#rvaldim{ font-size:27px; font-weight:700; color:#5f6570; }
+QLabel#rsub   { color:#8a9099; font-size:10px; }
+QListWidget   { background:#1e2229; border:1px solid #333a45; border-radius:6px; font-size:11px; }
 QTabBar::tab  { background:#1b1f26; padding:9px 20px; border-top-left-radius:7px;
                 border-top-right-radius:7px; }
 QTabBar::tab:selected { background:#262c36; }
@@ -66,9 +78,9 @@ QProgressBar::chunk { background:#3c9c58; border-radius:5px; }
 class Chip(QtWidgets.QLabel):
     """Per-site lock indicator: lit when that segment currently has visible landmarks."""
 
-    def __init__(self, name):
-        super().__init__(name)
-        self.name = name
+    def __init__(self, name, label=None):
+        super().__init__(label or name)
+        self.name = name                    # the schema segment, which may differ from the label
         self.setAlignment(QtCore.Qt.AlignCenter)
         self.setFixedHeight(24)
         self.set_on(False)
@@ -80,21 +92,72 @@ class Chip(QtWidgets.QLabel):
                else "background:#22262e; color:#606673; border:1px solid #2c3038;"))
 
 
+class Readout(QtWidgets.QFrame):
+    """One live number, its unit, and a sub-line for spread or provenance.
+
+    The sub-line is not decoration. Every number this rig produces is either qualified by its
+    scatter or not worth reading, so there is nowhere in this widget to display a bare value --
+    and `dim` greys the number out whenever the qualifier says it cannot be trusted.
+    """
+
+    def __init__(self, label, unit, sub="--"):
+        super().__init__()
+        self.setObjectName("card")
+        self.setMinimumWidth(148)
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(13, 9, 13, 9)
+        lay.setSpacing(1)
+        self._lab = QtWidgets.QLabel(label.upper()); self._lab.setObjectName("rlabel")
+        row = QtWidgets.QHBoxLayout(); row.setSpacing(4); row.setContentsMargins(0, 0, 0, 0)
+        self._val = QtWidgets.QLabel("--"); self._val.setObjectName("rval")
+        self._unit = QtWidgets.QLabel(unit); self._unit.setObjectName("unit")
+        self._unit.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignBottom)
+        row.addWidget(self._val); row.addWidget(self._unit); row.addStretch()
+        self._sub = QtWidgets.QLabel(sub); self._sub.setObjectName("rsub")
+        self._sub.setWordWrap(True); self._sub.setMinimumHeight(26)
+        lay.addWidget(self._lab); lay.addLayout(row); lay.addWidget(self._sub)
+
+    def set(self, value, sub=None, dim=False):
+        self._val.setText(value)
+        self._val.setObjectName("rvaldim" if dim else "rval")
+        # Re-polish, or the objectName swap does not repaint: Qt resolves stylesheet rules when
+        # the widget is polished, not on every paint.
+        self._val.style().unpolish(self._val); self._val.style().polish(self._val)
+        if sub is not None:
+            self._sub.setText(sub)
+
+
 class Worker(QtCore.QThread):
     """Runs the capture pipeline. Emits frames and metrics; never touches widgets."""
 
     frame = QtCore.Signal(object, object, float, int, int)   # bgr, live-panel bgr, el, kept, seen
+    metrics = QtCore.Signal(dict)                            # live HR / PTT / path, for readouts
     status = QtCore.Signal(str)
     finished_run = QtCore.Signal(str, bool, str)             # tag, saved, message
 
-    def __init__(self, seconds, tag, parent=None):
+    def __init__(self, seconds, tag, session=None, parent=None):
         super().__init__(parent)
         self.seconds, self.tag = seconds, tag
+        self.session = session
+        self.subject = ""
         self._recording = False
         self._abort = False
         self.sites = set()
+        # Wall clock at which the capture loop's own timebase starts, and the wall clock at which
+        # RECORDING starts. Sync marks are stamped by the GUI thread against time.time(), so these
+        # are what convert a mark into an offset into the saved data. Written once by run()
+        # before any mark can plausibly arrive, and only ever read afterwards.
+        self.t_wall = float("nan")
+        self.t_rec_wall = float("nan")
+        self.path_manual = float("nan")
+        self.method = MTH.DEFAULT
+        self.propagation = True
+        self.live = {}
 
     def start_recording(self):
+        # Stamped here rather than in the loop so the anchor is the instant the operator asked
+        # for, not the top of the next frame up to 33 ms later.
+        self.t_rec_wall = time.time()
         self._recording = True
 
     def abort(self):
@@ -142,6 +205,7 @@ class Worker(QtCore.QThread):
         panel = LIVE.LivePanel()
         acc, T = [], []
         t_wall = time.time(); t0 = t_wall
+        self.t_wall = t_wall
         nseen = nkept = 0
 
         while not self._abort:
@@ -172,10 +236,14 @@ class Worker(QtCore.QThread):
             # Path length from pose world landmarks (metres), so the wave speed uses THIS
             # subject's arm rather than a nominal one -- arm length varies about 20% across
             # adults and enters the velocity linearly.
+            panel.path_manual = self.path_manual
             if res.pose_world_landmarks:
-                pc = HS.head_to_hand_cm(res.pose_world_landmarks[0])
-                if np.isfinite(pc):
-                    panel.path_cm = pc
+                # The DIFFERENTIAL path, not the anatomical face-to-hand route: the lag is a
+                # difference of two arrival times from the heart, so dividing the full
+                # face-to-hand distance by it inflated the wave speed to ~25 m/s.
+                panel.set_path(HS.differential_path_cm(res.pose_world_landmarks[0]))
+            elif np.isfinite(self.path_manual):
+                panel.set_path(None)               # let a manual value stand with no pose fit
             vis_pts = [p for p in pts if p is not None]
 
             if vis_pts:
@@ -212,7 +280,10 @@ class Worker(QtCore.QThread):
                     warnings.simplefilter("ignore", category=RuntimeWarning)
                     pr = np.nanmean(A[PM], 0) if PM.any() else np.full(3, np.nan)
                     ds = np.nanmean(A[DM], 0) if DM.any() else np.full(3, np.nan)
-                panel.push(pr, ds, time.time() - t_wall)
+                tnow = time.time() - t_wall
+                panel.push(pr, ds, tnow)
+                if self.propagation:
+                    panel.push_all(row, tnow, dist, seg, self.method)
             if self._recording:
                 nseen += 1
 
@@ -224,16 +295,49 @@ class Worker(QtCore.QThread):
             # seg covers the pose schema only; the appended fingertips extend past it, and a
             # plain zip would silently drop them from the overlay while still sampling them.
             seg_all = list(seg) + ["finger"] * (len(pts) - len(seg))
-            for p, s in zip(pts, seg_all):
+            lagmap = panel.site_lag if self.propagation else {}
+            span = max((abs(v) for v in lagmap.values()), default=0.0)
+            for i, (p, s) in enumerate(zip(pts, seg_all)):
                 if p is not None:
-                    col = (90, 200, 255) if (s in P.DISTAL or s.startswith("finger")) \
-                        else (140, 245, 140)
+                    if i in lagmap and span > 1e-6:
+                        # Colour BY ARRIVAL TIME, not by anatomy: green at the reference through
+                        # to red at the latest patch. A real pulse paints a smooth
+                        # proximal-to-distal gradient; noise paints confetti, and that is the
+                        # whole point of showing it.
+                        u = float(np.clip(lagmap[i] / span, 0.0, 1.0))
+                        col = (int(60 + 40 * (1 - u)), int(245 * (1 - u) + 60 * u),
+                               int(90 * (1 - u) + 245 * u))
+                    else:
+                        col = (90, 200, 255) if (s in P.DISTAL or s.startswith("finger")) \
+                            else (140, 245, 140)
                     cv2.circle(vis, p, 5, (20, 20, 20), 2, cv2.LINE_AA)
                     cv2.circle(vis, p, 5, col, 1, cv2.LINE_AA)
                     cv2.circle(vis, p, 1, col, -1, cv2.LINE_AA)
                     live.add(s)
+            if self.propagation and panel.site_fit:
+                sf = panel.site_fit
+                good = abs(sf.get("r", 0.0)) >= 0.5 and 4.0 <= sf.get("pwv_ms", 0) <= 12.0
+                cv2.putText(vis, f"arrival vs distance: r={sf['r']:+.2f}  "
+                            f"{sf['pwv_ms']:.1f} m/s  n={sf['n']}", (10, h - 12),
+                            cv2.FONT_HERSHEY_SIMPLEX, .48,
+                            (140, 245, 140) if good else (90, 165, 235), 1, cv2.LINE_AA)
             self.sites = live
             self.frame.emit(vis, panel.render(h), el, nkept, nseen)
+            # The medians, not the instantaneous values: a single window's lag is sub-frame noise
+            # at 30 fps, and the readout must show the quantity the model is actually fed.
+            self.live = {
+                "hr": panel.hr,
+                "ptt_ms": float(np.median(panel.hist)) if panel.hist else float("nan"),
+                "spread_ms": float(np.std(panel.hist)) if len(panel.hist) >= 3 else float("nan"),
+                "null_ms": float(np.median(panel.null_hist)) if panel.null_hist else float("nan"),
+                "path_cm": panel.path_cm,
+                "fs": panel.fs,
+                "n_lag": len(panel.hist),
+                "prop_r": panel.site_fit.get("r", float("nan")),
+                "prop_pwv": panel.site_fit.get("pwv_ms", float("nan")),
+                "prop_n": panel.site_fit.get("n", 0),
+            }
+            self.metrics.emit(self.live)
 
         cap.release()
         if self._abort and not acc:
@@ -247,6 +351,28 @@ class Worker(QtCore.QThread):
         except Exception as e:                      # noqa: BLE001
             msg, saved = f"analysis failed: {e}", False
         self.finished_run.emit(self.tag, saved, msg)
+
+    def _stem(self):
+        """Filename stem for this recording: subject, condition, and a take number if needed.
+
+        Two separate collisions were possible with the old `rppg_pose_{tag}` naming, and both
+        lose data silently:
+
+          across subjects -- subject 2's 'rest' overwrote subject 1's, since only the condition
+                             was in the name
+          across takes    -- re-recording 'rest' because the first was poor destroyed the first,
+                             and you cannot tell afterwards which one survived
+
+        So the subject goes in the name, and an existing file is never overwritten: the take
+        number increments instead. Disk is cheap and a subject with a cuff on their arm is not.
+        """
+        base = f"{self.subject}_{self.tag}" if self.subject else self.tag
+        if not (DATA / f"rppg_pose_{base}.json").exists():
+            return base
+        k = 2
+        while (DATA / f"rppg_pose_{base}_take{k}.json").exists():
+            k += 1
+        return f"{base}_take{k}"
 
     def _analyse(self, acc, T, dist, seg):
         """Same pipeline as rppg_pose.main, reused so the app and CLI cannot diverge."""
@@ -263,45 +389,90 @@ class Worker(QtCore.QThread):
             if good.mean() < .6:
                 filtered.append(None); quals.append(0.); hrs.append(np.nan); continue
             fill = np.stack([np.interp(tu, T[good], rgb[good, c]) for c in range(3)], 1)
-            ch = R.chrom(fill); bp = R.bandpass(ch, fs)
+            bp = MTH.extract(fill, fs, self.method)
+            if bp is None:
+                filtered.append(None); quals.append(0.); hrs.append(np.nan); continue
+            ch = R.chrom(fill)          # kept for the stage figure, whatever method was used
             stages_all[i] = {"raw": fill[:, 1],
                              "detrended": P.detrend(fill[:, 1], fs), "chrom": ch, "filtered": bp}
             _, hr, qm, _ = P.plausible(bp, fs)
             filtered.append(bp); quals.append(qm); hrs.append(hr)
         quals, hrs = np.array(quals), np.array(hrs)
-        cons = float(np.median(hrs[np.isfinite(hrs) & (quals > P.MIN_SNR)])) \
-            if np.isfinite(hrs).any() else np.nan
+        # Shared helper, so this cannot drift from the CLI. It returns None -- not nan -- when no
+        # site clears the SNR gate, because nan propagated into the agreement gate rejected every
+        # site including flawless ones.
+        cons = P.consensus_hr(hrs, quals)
         ok = np.zeros(len(filtered), bool)
+        details = []
         for i, x in enumerate(filtered):
-            if x is not None:
-                ok[i], _, _, _ = P.plausible(x, fs, cons)
+            if x is None:
+                details.append({"n": 0, "snr": 0.0, "frac": 0.0, "hr": np.nan,
+                                "ibi_sd": np.nan, "fail": ["short"]})
+                continue
+            ok[i], _, _, _ = P.plausible(x, fs, cons)
+            details.append(P.gate_detail(x, fs, cons))
         if ok.sum() < 6:
-            return (f"only {ok.sum()} sites passed quality gates (need 6). "
-                    "More light on face and forearm, hold still."), False
+            _, lines = P.gate_report(details, np.asarray(seg).astype(str))
+            return "<br>".join(lines), False
+        cons = cons if cons is not None else float("nan")
         out = {"tag": self.tag, "fps": fs, "n_frames": len(T), "n_points": int(acc.shape[1]),
-               "n_accepted": int(ok.sum()), "consensus_hr": cons}
-        (DATA / f"rppg_pose_{self.tag}.json").write_text(json.dumps(out, indent=2, default=float))
+               "n_accepted": int(ok.sum()), "consensus_hr": cons,
+               "path_cm": self.live.get("path_cm", float("nan")),
+               "t_wall_capture": self.t_wall, "t_wall_record": self.t_rec_wall}
+        # Marks and cuff readings are re-expressed as offsets into THIS recording's own clock, so
+        # the saved file can be aligned offline without also needing the session file. They are
+        # copied, not moved: the session file remains the authority.
+        if self.session is not None:
+            t_rec = self.t_rec_wall
+            def _off(ev):
+                e = dict(ev)
+                e["t_in_record_s"] = (round(ev["t_wall"] - t_rec, 4)
+                                      if np.isfinite(t_rec) else None)
+                return e
+            out["marks"] = [_off(m) for m in self.session.marks]
+            out["calib"] = [_off(c) for c in self.session.calib]
+            out["session"] = self.session.name
+        out["subject"] = self.subject
+        stem = self._stem()
+        out["file"] = f"rppg_pose_{stem}"
+        (DATA / f"rppg_pose_{stem}.json").write_text(json.dumps(out, indent=2, default=float))
         best = int(np.argmax(quals))
-        np.savez(DATA / f"rppg_pose_{self.tag}.npz",
+        np.savez(DATA / f"rppg_pose_{stem}.npz",
                  sigs=np.stack([x if x is not None else np.zeros(len(tu)) for x in filtered]),
                  accepted=ok, quals=quals, hrs=hrs, dist=dist, seg=np.asarray(seg), fs=fs,
+                 # The per-channel means BEFORE any extraction, plus their timestamps. Without
+                 # these the npz holds only one method's output, so a recording could never be
+                 # re-analysed with POS or ICA afterwards -- a whole session would have to be
+                 # repeated to change that choice. ~1.5 MB for a 60 s run, which is nothing.
+                 raw_rgb=acc, t=T, method=self.method,
                  **stages_all.get(best, {}))
-        return (f"saved -- HR {cons:.0f} bpm, {ok.sum()}/{len(ok)} sites accepted "
-                f"at {fs:.0f} fps"), True
+        return (f"saved as <b>rppg_pose_{stem}</b><br>HR {cons:.0f} bpm, "
+                f"{ok.sum()}/{len(ok)} sites accepted at {fs:.0f} fps"), True
 
 
 class Main(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Camera Pulse Transit Time")
-        self.resize(1180, 760)
+        self.resize(1340, 900)
         self.worker = None
+        self.live = {}                       # last metrics dict from the worker
+        self.session = BP.Session()
         tabs = QtWidgets.QTabWidget()
         tabs.addTab(self._capture_tab(), "Capture")
         tabs.addTab(self._results_tab(), "Results")
         self.tabs = tabs
         self.setCentralWidget(tabs)
-        self.statusBar().showMessage("Ready")
+
+        # Space marks the cuff; ctrl+enter logs a reading. Both are application-wide so neither
+        # depends on what happens to hold focus while you are looking at the subject, not the
+        # screen. The buttons take no focus, so space cannot be captured by one of them.
+        for keys, slot in ((QtCore.Qt.Key_Space, self._sync),
+                           ("Ctrl+Return", self._log_bp)):
+            QtGui.QShortcut(QtGui.QKeySequence(keys), self).activated.connect(slot)
+
+        self._refresh_cal()
+        self.statusBar().showMessage(f"Ready -- session {self.session.name}")
 
     # ------------------------------------------------------------- capture tab
     def _capture_tab(self):
@@ -321,14 +492,38 @@ class Main(QtWidgets.QMainWindow):
 
         self.chips = {}
         chiprow = QtWidgets.QHBoxLayout(); chiprow.setSpacing(6)
-        for s in ("forehead", "cheek_l", "cheek_r", "forearm", "hand"):
-            c = Chip(s); self.chips[s] = c; chiprow.addWidget(c)
+        # finger_tip earns a chip of its own: it is the strongest rPPG signal on the body and the
+        # site the whole transit measurement depends on, so "is it locked" must be answerable
+        # before a recording rather than from the panel's "fingertips not visible" afterwards.
+        for s, lab in (("forehead", "forehead"), ("cheek_l", "cheek L"), ("cheek_r", "cheek R"),
+                       ("forearm", "forearm"), ("hand", "hand"), ("finger_tip", "fingertips")):
+            c = Chip(s, lab); self.chips[s] = c; chiprow.addWidget(c)
         chiprow.addStretch()
         left.addLayout(chiprow)
+
+        # The four numbers the session is actually about, big enough to read from arm's length
+        # while the subject is in the chair and you are holding a cuff bulb.
+        self.ro = {
+            "hr":   Readout("Heart rate", "bpm"),
+            "ptt":  Readout("Face -> fingertips", "ms"),
+            "pwv":  Readout("Wave speed", "m/s"),
+            "bp":   Readout("Blood pressure", "mmHg"),
+        }
+        rr = QtWidgets.QHBoxLayout(); rr.setSpacing(9)
+        for k in ("hr", "ptt", "pwv", "bp"):
+            rr.addWidget(self.ro[k], 1)
+        left.addLayout(rr)
         lay.addLayout(left, 1)
 
         side = QtWidgets.QVBoxLayout(); side.setSpacing(12)
         gb = QtWidgets.QGroupBox("Recording"); f = QtWidgets.QVBoxLayout(gb)
+        # Subject id goes into every filename. Without it the condition alone named the file, so
+        # the next subject's 'rest' overwrote the last one's.
+        self.subject = QtWidgets.QLineEdit()
+        self.subject.setPlaceholderText("e.g. s01   (used in every filename)")
+        self.subject.setMaxLength(24)
+        self.subject.editingFinished.connect(self._set_subject)
+        f.addWidget(QtWidgets.QLabel("Subject")); f.addWidget(self.subject)
         self.cond = QtWidgets.QComboBox()
         for tag, _ in CONDITIONS:
             self.cond.addItem(tag)
@@ -341,6 +536,27 @@ class Main(QtWidgets.QMainWindow):
         self.secs = QtWidgets.QSpinBox(); self.secs.setRange(15, 300); self.secs.setValue(60)
         self.secs.setSuffix("  seconds")
         f.addWidget(QtWidgets.QLabel("Duration")); f.addWidget(self.secs)
+        f.addSpacing(6)
+        self.meth = QtWidgets.QComboBox()
+        for m in MTH.METHODS:
+            self.meth.addItem(m)
+        self.meth.setCurrentText(MTH.DEFAULT)
+        self.meth.currentTextChanged.connect(self._set_method)
+        self.meth.setToolTip(
+            "pos   plane-orthogonal-to-skin (Wang 2017) -- projects out the specular component\n"
+            "chrom chrominance ratio (de Haan 2013) -- what this pipeline used to use\n"
+            "ica   FastICA on RGB (Poh 2010), best component by in-band SNR\n"
+            "pca   orthogonal cousin of ICA; a useful disagreement check\n"
+            "green raw green channel -- baseline only, fooled by in-band light flicker")
+        f.addWidget(QtWidgets.QLabel("Extraction method")); f.addWidget(self.meth)
+        # The raw per-channel means are saved with every recording, so this choice is not
+        # destructive -- any recording can be re-extracted with any method afterwards.
+        mnote = QtWidgets.QLabel(
+            "Raw RGB is saved too, so this is reversible. Run "
+            "<code>python rppg_methods.py</code> to rank the methods on your own recordings.")
+        mnote.setObjectName("hint"); mnote.setWordWrap(True)
+        mnote.setTextFormat(QtCore.Qt.RichText)
+        f.addWidget(mnote)
         side.addWidget(gb)
 
         self.btn_prev = QtWidgets.QPushButton("Start camera preview")
@@ -358,9 +574,93 @@ class Main(QtWidgets.QMainWindow):
         gb2 = QtWidgets.QGroupBox("Live"); g2 = QtWidgets.QGridLayout(gb2)
         self.lbl_state = QtWidgets.QLabel("idle"); self.lbl_state.setObjectName("hint")
         self.lbl_fps = QtWidgets.QLabel("-"); self.lbl_fps.setObjectName("hint")
+        self.lbl_path = QtWidgets.QLabel("-"); self.lbl_path.setObjectName("hint")
+        self.lbl_null = QtWidgets.QLabel("-"); self.lbl_null.setObjectName("hint")
         g2.addWidget(QtWidgets.QLabel("State"), 0, 0); g2.addWidget(self.lbl_state, 0, 1)
         g2.addWidget(QtWidgets.QLabel("Kept"), 1, 0);  g2.addWidget(self.lbl_fps, 1, 1)
+        g2.addWidget(QtWidgets.QLabel("Path"), 2, 0);  g2.addWidget(self.lbl_path, 2, 1)
+        g2.addWidget(QtWidgets.QLabel("Control"), 3, 0); g2.addWidget(self.lbl_null, 3, 1)
+        self.lbl_prop = QtWidgets.QLabel("-"); self.lbl_prop.setObjectName("hint")
+        self.lbl_prop.setWordWrap(True)
+        g2.addWidget(QtWidgets.QLabel("Propagation"), 4, 0); g2.addWidget(self.lbl_prop, 4, 1)
+        self.cb_prop = QtWidgets.QCheckBox("Colour patches by arrival time")
+        self.cb_prop.setChecked(True)
+        self.cb_prop.setToolTip(
+            "Regress arrival time on arterial distance across all patches, every 0.4 s.\n"
+            "A real pulse gives a smooth green->red proximal-to-distal gradient and r > 0.5;\n"
+            "noise gives confetti. This is the check a single face-to-hand lag cannot provide.")
+        self.cb_prop.toggled.connect(self._set_prop)
+        g2.addWidget(self.cb_prop, 5, 0, 1, 2)
         side.addWidget(gb2)
+
+        # ---------------------------------------------------------------- cuff synchronisation
+        gs = QtWidgets.QGroupBox("Cuff sync"); fs_ = QtWidgets.QVBoxLayout(gs)
+        self.btn_sync = QtWidgets.QPushButton("SYNC MARK\nspace")
+        self.btn_sync.setObjectName("sync")
+        self.btn_sync.setFocusPolicy(QtCore.Qt.NoFocus)   # else space re-triggers the button
+        self.btn_sync.clicked.connect(self._sync)
+        fs_.addWidget(self.btn_sync)
+        self.lbl_marks = QtWidgets.QLabel("no marks yet"); self.lbl_marks.setObjectName("hint")
+        self.lbl_marks.setWordWrap(True)
+        fs_.addWidget(self.lbl_marks)
+        sync_note = QtWidgets.QLabel(
+            "Press as the cuff starts inflating. The stamp is taken in the keypress handler, so "
+            "software adds well under a millisecond -- but <b>your reaction time does not</b>, "
+            "and that is 200-300 ms. Press on the same cue every time: a repeatable offset "
+            "cancels when you compare conditions, a variable one does not.")
+        sync_note.setObjectName("hint"); sync_note.setWordWrap(True)
+        sync_note.setTextFormat(QtCore.Qt.RichText)
+        fs_.addWidget(sync_note)
+        side.addWidget(gs)
+
+        # ------------------------------------------------------------------------ calibration
+        gc = QtWidgets.QGroupBox("Calibration"); fc = QtWidgets.QVBoxLayout(gc)
+        ent = QtWidgets.QHBoxLayout()
+        self.sbp = QtWidgets.QSpinBox(); self.sbp.setRange(40, 300); self.sbp.setValue(120)
+        self.dbp = QtWidgets.QSpinBox(); self.dbp.setRange(20, 200); self.dbp.setValue(80)
+        ent.addWidget(QtWidgets.QLabel("SBP")); ent.addWidget(self.sbp)
+        ent.addWidget(QtWidgets.QLabel("DBP")); ent.addWidget(self.dbp)
+        fc.addLayout(ent)
+        self.btn_cal = QtWidgets.QPushButton("Log cuff reading   (ctrl+enter)")
+        self.btn_cal.setFocusPolicy(QtCore.Qt.NoFocus)
+        self.btn_cal.clicked.connect(self._log_bp)
+        fc.addWidget(self.btn_cal)
+        self.cal_list = QtWidgets.QListWidget(); self.cal_list.setFixedHeight(96)
+        fc.addWidget(self.cal_list)
+        crow = QtWidgets.QHBoxLayout()
+        b_del = QtWidgets.QPushButton("Remove selected"); b_del.setFocusPolicy(QtCore.Qt.NoFocus)
+        b_del.clicked.connect(self._drop_bp)
+        crow.addWidget(b_del)
+        fc.addLayout(crow)
+        self.lbl_fit = QtWidgets.QLabel(); self.lbl_fit.setObjectName("hint")
+        self.lbl_fit.setWordWrap(True); self.lbl_fit.setTextFormat(QtCore.Qt.RichText)
+        fc.addWidget(self.lbl_fit)
+        cal_note = QtWidgets.QLabel(
+            "A reading is only usable if a transit time is on screen when you log it, so wait "
+            "for the PTT number before pressing. Vary the pressure between readings -- five "
+            "readings all at rest calibrate the intercept and say nothing about the slope.")
+        cal_note.setObjectName("hint"); cal_note.setWordWrap(True)
+        fc.addWidget(cal_note)
+        side.addWidget(gc)
+
+        # --------------------------------------------------------------------- path override
+        gp = QtWidgets.QGroupBox("Path length"); fp = QtWidgets.QVBoxLayout(gp)
+        prow = QtWidgets.QHBoxLayout()
+        self.path_box = QtWidgets.QDoubleSpinBox()
+        self.path_box.setRange(0.0, 150.0); self.path_box.setDecimals(1)
+        self.path_box.setSpecialValueText("pose estimate")   # 0 means "use the model"
+        self.path_box.setValue(0.0); self.path_box.setSuffix(" cm")
+        self.path_box.valueChanged.connect(self._set_path)
+        prow.addWidget(self.path_box)
+        fp.addLayout(prow)
+        pnote = QtWidgets.QLabel(
+            "Pose world landmarks give this subject's own ear-shoulder-elbow-wrist chain plus "
+            "18 cm of hand, in metres, with no calibration object in the scene. Wave speed "
+            "scales linearly with it, so a tape measure over the same route beats the estimate "
+            "if you have one -- enter it here and it overrides.")
+        pnote.setObjectName("hint"); pnote.setWordWrap(True)
+        fp.addWidget(pnote)
+        side.addWidget(gp)
 
         note = QtWidgets.QLabel(
             "Preview runs the whole pipeline and saves nothing. Wait until the sites you need "
@@ -371,8 +671,14 @@ class Main(QtWidgets.QMainWindow):
         note.setTextFormat(QtCore.Qt.RichText)          # else the <b> tags render literally
         side.addWidget(note); side.addStretch()
         holder = QtWidgets.QWidget(); holder.setLayout(side)
-        holder.setFixedWidth(290)                       # stop the hints being clipped mid-word
-        lay.addWidget(holder)
+        holder.setFixedWidth(320)                       # stop the hints being clipped mid-word
+        # Scrollable: the sidebar now carries sync, calibration and path as well as recording,
+        # which is taller than a laptop screen with the video at a usable size.
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidget(holder); scroll.setWidgetResizable(True)
+        scroll.setFixedWidth(340); scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        lay.addWidget(scroll)
         self._hint()
         return page
 
@@ -385,7 +691,16 @@ class Main(QtWidgets.QMainWindow):
         bar = QtWidgets.QHBoxLayout()
         b = QtWidgets.QPushButton("Build robustness plots from saved recordings")
         b.clicked.connect(self._build_plots)
-        bar.addWidget(b); bar.addStretch()
+        bx = QtWidgets.QPushButton("Export CSV")
+        bx.clicked.connect(lambda: self._export(waveforms=True))
+        bt = QtWidgets.QPushButton("Export CSV (tables only)")
+        bt.setToolTip("Skip the per-sample waveform files, which are much the largest")
+        bt.clicked.connect(lambda: self._export(waveforms=False))
+        bo = QtWidgets.QPushButton("Reveal in Finder")
+        bo.clicked.connect(self._reveal)
+        for x in (b, bx, bt, bo):
+            bar.addWidget(x)
+        bar.addStretch()
         lay.addLayout(bar)
         self.res_msg = QtWidgets.QLabel("No plots yet."); self.res_msg.setObjectName("hint")
         self.res_msg.setWordWrap(True)
@@ -393,6 +708,35 @@ class Main(QtWidgets.QMainWindow):
         self.gallery = QtWidgets.QTabWidget()
         lay.addWidget(self.gallery, 1)
         return page
+
+    def _export(self, waveforms=True):
+        """Write every session and recording out as CSV, and say exactly what was written."""
+        import export_csv as EX
+        self.session.save()                  # flush the live session before exporting it
+        self.res_msg.setText("exporting ...")
+        QtWidgets.QApplication.processEvents()
+        try:
+            wrote = EX.export_all(EX.EXPORT, waveforms=waveforms)
+        except Exception as e:               # noqa: BLE001 -- surface it, never fail silently
+            self.res_msg.setText(f"<b>export failed:</b> {e}")
+            return
+        if not wrote:
+            self.res_msg.setText(
+                "Nothing to export yet -- no completed recordings and no cuff readings.")
+            return
+        rows = "".join(
+            f"<tr><td style='padding-right:14px'>{p.stat().st_size:,d}</td>"
+            f"<td>{p.name}</td></tr>" for p in wrote)
+        self.res_msg.setText(
+            f"<b>{len(wrote)} file(s)</b> -> {EX.EXPORT}<br>"
+            f"<table style='font-size:11px'>{rows}</table>")
+        self.statusBar().showMessage(f"exported {len(wrote)} file(s) to {EX.EXPORT}", 6000)
+
+    def _reveal(self):
+        """Open the export folder in Finder, so the files can be dragged straight out."""
+        import export_csv as EX
+        EX.EXPORT.mkdir(parents=True, exist_ok=True)
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(EX.EXPORT)))
 
     def _build_plots(self):
         import subprocess
@@ -413,11 +757,201 @@ class Main(QtWidgets.QMainWindow):
             self.res_msg.setText(self.res_msg.text() + "<br>No figures produced yet.")
 
     # ---------------------------------------------------------------- controls
+    def _set_prop(self, on):
+        self._prop = bool(on)
+        if self.worker:
+            self.worker.propagation = bool(on)
+
+    def _set_method(self, m):
+        """Switch extraction method. Applies to the next analysis and to the live panel."""
+        self._method = m
+        if self.worker:
+            self.worker.method = m
+        self.statusBar().showMessage(f"extraction method: {m}", 4000)
+
+    def _set_subject(self):
+        """Fold the typed subject id into the session name and every future filename."""
+        s = BP.slug(self.subject.text())
+        if s != self.subject.text():
+            self.subject.setText(s)          # show what will actually be written
+        self.session.set_subject(s)
+        if self.worker:
+            self.worker.subject = s
+        self.statusBar().showMessage(f"session {self.session.name}", 4000)
+
+    # -------------------------------------------------------------- sync and calibration
+    def _sync(self):
+        """Stamp a synchronisation mark at the keypress.
+
+        perf_counter is read FIRST, before any bookkeeping, because everything after it adds to
+        the offset this mark exists to pin down. The wall clock rides along so the mark can be
+        matched against the cuff's own printout.
+        """
+        t = time.perf_counter()
+        tag = self.cond.currentText()
+        rec = bool(self.worker and self.worker._recording)
+        m = self.session.mark(
+            label="cuff", t_mono=t, note=tag, recording=rec,
+            ptt_ms=self.live.get("ptt_ms"), hr=self.live.get("hr"))
+        into = ""
+        if rec and np.isfinite(getattr(self.worker, "t_rec_wall", float("nan"))):
+            into = f"  ({m['t_wall'] - self.worker.t_rec_wall:+.2f} s into '{tag}')"
+        self.lbl_marks.setText(
+            f"<b>{len(self.session.marks)} mark(s)</b><br>last {m['iso'].split('T')[1]}{into}"
+            + ("" if rec else "<br><span style='color:#d8a657'>not recording</span>"))
+        self.lbl_marks.setTextFormat(QtCore.Qt.RichText)
+        # Brief flash, so a press that did register is unmistakable without looking away.
+        self.btn_sync.setText(f"MARKED  #{len(self.session.marks)}")
+        QtCore.QTimer.singleShot(450, lambda: self.btn_sync.setText("SYNC MARK\nspace"))
+        self.statusBar().showMessage(f"mark {len(self.session.marks)} at {m['iso']}", 4000)
+
+    def _log_bp(self):
+        """Pair the cuff reading now on the spinboxes with the live features."""
+        t = time.perf_counter()
+        ptt = self.live.get("ptt_ms", float("nan"))
+        p = self.session.add_calib(
+            self.sbp.value(), self.dbp.value(), ptt_ms=ptt, hr=self.live.get("hr"),
+            path_cm=self.live.get("path_cm"), spread_ms=self.live.get("spread_ms"),
+            label=self.cond.currentText(), t_mono=t)
+        self._refresh_cal()
+        if BP.features(p["ptt_ms"], p["hr"], p["path_cm"]) is None:
+            # Kept, not discarded -- the cuff reading is still a real observation, and the
+            # operator may want it in the record. But it cannot enter a fit, and saying so now
+            # is the difference between 5 usable points and a surprise at analysis time.
+            self.statusBar().showMessage(
+                "logged, but NOT usable for calibration: no valid transit time at that moment",
+                8000)
+        else:
+            self.statusBar().showMessage(
+                f"logged {p['sbp']:.0f}/{p['dbp']:.0f} at PTT {p['ptt_ms']:.1f} ms", 5000)
+
+    def _drop_bp(self):
+        i = self.cal_list.currentRow()
+        if i >= 0:
+            self.session.drop_calib(i)
+            self._refresh_cal()
+
+    def _set_path(self, v):
+        """0 means 'use the pose estimate'; anything else is a tape measure and overrides."""
+        cm = float("nan") if v <= 0.0 else float(v)
+        if self.worker:
+            self.worker.path_manual = cm
+        self._manual_path = cm
+
+    def _refresh_cal(self):
+        """Rebuild the point list and the fit status. Called on every change to the set."""
+        self.cal_list.clear()
+        for p in self.session.calib:
+            usable = BP.features(p.get("ptt_ms"), p.get("hr"), p.get("path_cm")) is not None
+            ptt = p.get("ptt_ms")
+            txt = (f"{p['sbp']:.0f}/{p['dbp']:.0f}  "
+                   f"{'PTT %.1f ms' % ptt if ptt else 'no PTT'}  {p.get('label', '')}")
+            it = QtWidgets.QListWidgetItem(("  " if usable else "x ") + txt)
+            if not usable:
+                it.setForeground(QtGui.QColor("#8a6a3a"))
+            self.cal_list.addItem(it)
+        self.fits = self.session.fits()
+        n = len(self.session.usable("sbp"))
+        need = BP.MODE_MIN
+        s, d = self.fits["sbp"], self.fits["dbp"]
+        if not s.ok:
+            msg = ("<b>No calibration.</b> No blood pressure will be shown -- a population "
+                   "average is not a measurement of this subject.")
+        else:
+            msg = f"<b>SBP</b> {s.describe()}<br><b>DBP</b> {d.describe()}"
+            if s.mode == "offset":
+                msg += (f"<br>The slope is ASSUMED from physiology. {need['slope'] - n} more "
+                        "reading(s) at a different pressure will start fitting it.")
+            elif s.mode == "slope":
+                msg += (f"<br>{need['full'] - n} more to fit the rate term too.")
+        self.lbl_fit.setText(msg)
+        self._refresh_bp()
+
+    def _refresh_bp(self):
+        """Push the current estimate into the readout, or refuse to."""
+        ptt, hr = self.live.get("ptt_ms", float("nan")), self.live.get("hr", float("nan"))
+        path = self.live.get("path_cm", float("nan"))
+        fits = getattr(self, "fits", None)
+        if not fits or not fits["sbp"].ok:
+            self.ro["bp"].set("--", "log a cuff reading to calibrate", dim=True)
+            return
+        sv, ss = fits["sbp"].predict(ptt, hr, path)
+        dv, _ = fits["dbp"].predict(ptt, hr, path)
+        if not np.isfinite(sv):
+            self.ro["bp"].set("--", "no valid transit time right now", dim=True)
+            return
+        spread = self.live.get("spread_ms", float("nan"))
+        # Dim unless the calibration fitted its own slope AND the transit time feeding it is
+        # bigger than its own scatter. Either failure makes the number decorative.
+        solid = (fits["sbp"].mode != "offset" and np.isfinite(spread)
+                 and np.isfinite(ptt) and abs(ptt) > spread)
+        self.ro["bp"].set(f"{sv:.0f}/{dv:.0f}",
+                          f"+/-{ss:.0f} mmHg   n={fits['sbp'].n}"
+                          + ("" if solid else "   indicative only"), dim=not solid)
+
+    # ---------------------------------------------------------------- live metrics
+    def _on_metrics(self, m):
+        self.live = m
+        hr, ptt = m.get("hr", float("nan")), m.get("ptt_ms", float("nan"))
+        spread, path = m.get("spread_ms", float("nan")), m.get("path_cm", float("nan"))
+        null, fs = m.get("null_ms", float("nan")), m.get("fs", float("nan"))
+
+        self.ro["hr"].set(f"{hr:.0f}" if np.isfinite(hr) else "--",
+                          "spectral peak, several seconds" if np.isfinite(hr) else "collecting")
+        if np.isfinite(ptt):
+            noisy = not np.isfinite(spread) or abs(ptt) <= spread
+            self.ro["ptt"].set(f"{ptt:+.1f}",
+                               (f"+/-{spread:.1f} over {m.get('n_lag', 0)} windows"
+                                if np.isfinite(spread) else "spread not yet estimable")
+                               + ("   below its own scatter" if noisy else ""), dim=noisy)
+        else:
+            self.ro["ptt"].set("--", "no distal signal yet", dim=True)
+
+        pwv = BP.pwv_ms(ptt, path)
+        if np.isfinite(pwv):
+            # 4-12 m/s is the physiological range; outside it the timing, not the subject, is
+            # what the number is describing.
+            bad = not (4.0 <= pwv <= 12.0)
+            self.ro["pwv"].set(f"{pwv:.1f}",
+                               f"over {path:.0f} cm" + ("   outside 4-12 m/s" if bad else ""),
+                               dim=bad)
+        else:
+            self.ro["pwv"].set("--", "needs a transit time", dim=True)
+
+        self.lbl_path.setText(
+            f"{path:.0f} cm" + ("  (manual)" if np.isfinite(getattr(self, "_manual_path",
+                                                                    float("nan"))) else "")
+            if np.isfinite(path) else "-")
+        # The null control, against the frame quantum: if two sites at the SAME arterial distance
+        # read a lag comparable to the face-to-hand one, the timing pipeline is what is being
+        # measured. Kept next to the number it invalidates.
+        if np.isfinite(null):
+            q = 1000.0 / max(fs, 1e-6) if np.isfinite(fs) else float("inf")
+            self.lbl_null.setText(f"{null:+.1f} ms" + ("" if abs(null) <= 0.5 * q else "  HIGH"))
+        else:
+            self.lbl_null.setText("-")
+        # Arrival-vs-distance: r says the ordering is real, the slope says how fast. Both or
+        # neither -- a good r with an absurd speed means the patches are ordered but the timing
+        # is scaled wrong, which is a different fault from noise.
+        pr, ppwv, pn = m.get("prop_r"), m.get("prop_pwv"), m.get("prop_n", 0)
+        if pr is not None and np.isfinite(pr) and pn:
+            verdict = ("real" if abs(pr) >= 0.5 and np.isfinite(ppwv) and 4 <= ppwv <= 12
+                       else "not ordered")
+            self.lbl_prop.setText(f"r={pr:+.2f}  {ppwv:.1f} m/s  n={pn}  ({verdict})")
+        else:
+            self.lbl_prop.setText("-")
+        self._refresh_bp()
+
     def _preview(self):
         if self.worker:
             return
-        self.worker = Worker(self.secs.value(), self.cond.currentText(), self)
+        self.worker = Worker(self.secs.value(), self.cond.currentText(), self.session, self)
+        self.worker.path_manual = getattr(self, "_manual_path", float("nan"))
+        self.worker.subject = BP.slug(self.subject.text())
+        self.worker.method = self.meth.currentText()
+        self.worker.propagation = self.cb_prop.isChecked()
         self.worker.frame.connect(self._on_frame)
+        self.worker.metrics.connect(self._on_metrics)
         self.worker.status.connect(self.statusBar().showMessage)
         self.worker.finished_run.connect(self._on_done)
         self.worker.start()
@@ -431,6 +965,9 @@ class Main(QtWidgets.QMainWindow):
             return
         self.worker.seconds = self.secs.value()
         self.worker.tag = self.cond.currentText()
+        # Re-read the subject here too: preview is often started before the id is typed in, and
+        # the filename is decided at save time, not at preview time.
+        self.worker.subject = BP.slug(self.subject.text())
         self.worker.start_recording()
         self.btn_rec.setEnabled(False); self.cond.setEnabled(False); self.secs.setEnabled(False)
         self.lbl_state.setText(f"RECORDING '{self.worker.tag}'")
@@ -441,6 +978,10 @@ class Main(QtWidgets.QMainWindow):
             self.worker.abort()
 
     def _on_frame(self, bgr, panel_bgr, el, kept, seen):
+        # Frames are queued across the thread boundary, so one can land after the worker has
+        # finished and been cleared. Dereferencing it here then raised mid-session.
+        if not self.worker:
+            return
         for name, chip in self.chips.items():
             chip.set_on(name in self.worker.sites)
         self.video.setPixmap(self._pix(bgr, self.video.width(), self.video.height()))

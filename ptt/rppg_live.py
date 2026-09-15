@@ -28,6 +28,17 @@ PANEL_W = 430
 MIN_BUF_S = 6.0            # below this there is not enough signal to say anything
 HIST = 40                  # recent lag estimates kept for the spread and the sparkline
 
+# Lag search half-window, set by PHYSIOLOGY rather than by a frame count.
+#
+# This was min(0.25, 4/fs), i.e. four frames. At 30 fps that is 133 ms and fine, but the camera is
+# opened requesting 60 fps, where four frames is only 67 ms -- SHORTER than the lag being looked
+# for. Pulse arrival time to the finger is ~200-250 ms from the R-wave and to the forehead
+# ~130-160 ms, so the face-to-fingertip difference is ~60-90 ms. A 67 ms window clips that at the
+# boundary and returns the edge of the search range, which reads as a confident small lag rather
+# than as a failure. 150 ms covers the physiological range with margin while still being narrow
+# enough that a weak signal cannot lock onto a neighbouring beat (a beat is 700-1000 ms away).
+MAX_LAG_S = 0.15
+
 
 class LivePanel:
     """Rolling buffers -> HR, transit-time estimate and a rendered panel."""
@@ -43,10 +54,114 @@ class LivePanel:
         self.null = np.nan
         self.null_hist = []
         self.path_cm = np.nan          # face-to-fingertip path, from pose world landmarks
+        self.path_hist = []
+        self.path_manual = np.nan      # a tape-measure value, which always wins when set
+        # Per-site propagation view: arrival time at EVERY patch, not just the two aggregates.
+        # Kept separate from prox/dist because it is a diagnostic, not part of the measurement.
+        self.allbuf, self.allT = [], []
+        self.site_lag = {}             # site index -> arrival time vs the proximal reference, ms
+        self.site_fit = {}             # slope/r/pwv of arrival against distance
+        self._last_all = -1e9
         self.hr = self.snr = np.nan
         self.lag = np.nan
         self.hist = []
         self._last = -1e9
+
+    def set_path(self, cm):
+        """Accumulate pose path-length estimates and keep their MEDIAN.
+
+        The quantity being estimated is anatomy -- the sum of this subject's upper arm, forearm
+        and neck -- so it does not change when they raise their hand, and frame-to-frame movement
+        in it is pose-fit noise. Taking the last frame's value let a single bad fit shift the
+        wave speed by 10%; the median over the session does not. A tape-measure value, if the
+        operator enters one, overrides the estimate entirely.
+        """
+        if cm is not None and np.isfinite(cm):
+            self.path_hist.append(float(cm))
+            del self.path_hist[:-240]          # ~8 s at 30 fps; long enough to be stable
+        if np.isfinite(self.path_manual):
+            self.path_cm = float(self.path_manual)
+        elif self.path_hist:
+            self.path_cm = float(np.median(self.path_hist))
+
+    def push_all(self, row, t, dist=None, seg=None, method="chrom"):
+        """Per-site arrival times, for the propagation overlay.
+
+        This is the check that cannot be faked. A single face-to-hand lag can be produced by a
+        fixed camera delay, a filter phase shift, or noise -- but ORDER cannot. If the number is a
+        transit time then arrival must grow with arterial distance, patch by patch, and the slope
+        of arrival against distance must land inside 4-12 m/s. So the overlay colours each patch
+        by its own arrival time: a real pulse shows a smooth proximal-to-distal gradient, and
+        noise shows confetti.
+
+        Runs on the panel's update tick, not per frame, and is skipped entirely when the buffer is
+        too short -- 34 band-passes and 34 cross-correlations are affordable at 2.5 Hz but not at
+        30.
+        """
+        self.allbuf.append(np.asarray(row, float))
+        self.allT.append(t)
+        while self.allT and t - self.allT[0] > self.buf_s:
+            self.allbuf.pop(0)
+            self.allT.pop(0)
+        if t - self._last_all < self.update_every:
+            return
+        self._last_all = t
+        self._recompute_sites(dist, seg, method)
+
+    def _recompute_sites(self, dist=None, seg=None, method="chrom"):
+        """Arrival time at each site relative to the strongest proximal patch."""
+        if len(self.allT) < 30 or self.allT[-1] - self.allT[0] < MIN_BUF_S:
+            return
+        import rppg_methods as MTH
+        A = np.asarray(self.allbuf, float)          # (n, nsites, 3)
+        T = np.asarray(self.allT, float)
+        fs = (len(T) - 1) / max(T[-1] - T[0], 1e-6)
+        if fs < 5:
+            return
+        tu = np.linspace(T[0], T[-1], len(T))
+        sigs, snrs = {}, {}
+        for i in range(A.shape[1]):
+            rgb = A[:, i, :]
+            good = np.isfinite(rgb).all(1)
+            if good.mean() < 0.6:
+                continue
+            fill = np.stack([np.interp(tu, T[good], rgb[good, c]) for c in range(3)], 1)
+            x = MTH.extract(fill, fs, method)
+            if x is None:
+                continue
+            s, _ = MTH._pulse_score(x, fs)
+            sigs[i], snrs[i] = x, s
+        if len(sigs) < 3:
+            return
+        # Reference is the best PROXIMAL patch, so every lag is measured from the same origin and
+        # the numbers are comparable across sites. Using the globally best patch instead would
+        # silently re-origin the whole gradient whenever a distal site happened to win.
+        prox_idx = [i for i in sigs
+                    if dist is None or (np.isfinite(dist[i]) and dist[i] <= 25.0)]
+        pool = prox_idx or list(sigs)
+        ref = max(pool, key=lambda i: snrs[i])
+        lags = {}
+        for i, x in sigs.items():
+            if snrs[i] < 2.0:                       # too weak to time; leave it uncoloured
+                continue
+            lag, _ = R.lag_subframe(sigs[ref], x, fs, max_lag_s=MAX_LAG_S)
+            if np.isfinite(lag):
+                lags[i] = float(lag)
+        self.site_lag = lags
+        # Regress arrival on distance: the slope IS the wave speed, and r says whether the
+        # ordering is real or whether the colours are noise.
+        if dist is not None and len(lags) >= 4:
+            ii = [i for i in lags if np.isfinite(dist[i])]
+            if len(ii) >= 4:
+                d = np.array([dist[i] for i in ii], float)
+                y = np.array([lags[i] for i in ii], float)
+                if d.std() > 1e-6:
+                    sl, ic = np.polyfit(d, y, 1)          # ms per cm
+                    r = float(np.corrcoef(d, y)[0, 1])
+                    self.site_fit = {
+                        "slope_ms_per_cm": float(sl), "intercept_ms": float(ic), "r": r,
+                        "pwv_ms": float(10.0 / sl) if sl > 1e-9 else np.nan,
+                        "n": len(ii)}
 
     def push(self, prox_rgb, dist_rgb, t, prox2_rgb=None):
         """Add one frame's proximal (face) and distal (hand) mean RGB.
@@ -143,8 +258,7 @@ class LivePanel:
             self.snr = float(S[k] / (np.median(S[m]) + 1e-15))
         if d is None:
             return
-        # search only a few samples: wide windows let a weak signal lock onto nonsense
-        lag, _ = R.lag_subframe(p, d, fs, max_lag_s=min(0.25, 4.0 / fs))
+        lag, _ = R.lag_subframe(p, d, fs, max_lag_s=MAX_LAG_S)
         if np.isfinite(lag):
             self.lag = float(lag)
             self.hist.append(self.lag)
@@ -160,7 +274,9 @@ class LivePanel:
                 q = R.bandpass(np.interp(tq, Tq, R.chrom(P2[okq])), fq)
                 n = min(len(p), len(q))
                 if n > 30 and np.std(q[:n]) > 1e-9:
-                    nl, _ = R.lag_subframe(p[:n], q[:n], fq, max_lag_s=min(0.25, 4.0 / fq))
+                    # Deliberately the SAME window as the measurement above. A tighter one would
+                    # flatter the control by forbidding it the large lags it is there to rule out.
+                    nl, _ = R.lag_subframe(p[:n], q[:n], fq, max_lag_s=MAX_LAG_S)
                     if np.isfinite(nl):
                         self.null = float(nl)
                         self.null_hist.append(self.null)
