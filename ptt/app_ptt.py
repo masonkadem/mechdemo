@@ -28,6 +28,10 @@ from PySide6 import QtCore, QtGui, QtWidgets
 
 import bp_model as BP
 import rppg_methods as MTH
+# Imported at module level, not inside Worker.run(), because the UI needs the gate thresholds to
+# build the quality-profile controls -- the worker's local `import rppg_pose as P` left the
+# window unable to see them. Cheap: rppg_methods already pulls it in.
+import rppg_pose as P
 
 ROOT = Path(__file__).resolve().parent
 DATA, FIGS = ROOT / "data", ROOT / "figures"
@@ -153,6 +157,7 @@ class Worker(QtCore.QThread):
         self.method = MTH.DEFAULT
         self.propagation = True
         self.side = "right"                 # updated per frame from which wrist the hand matches
+        self.profile = P.PROFILE
         self.live = {}
 
     def start_recording(self):
@@ -360,21 +365,33 @@ class Worker(QtCore.QThread):
             msg, saved = f"analysis failed: {e}", False
         self.finished_run.emit(self.tag, saved, msg)
 
+    @staticmethod
+    def _iso(t, ms=False):
+        """Local clock time, or None. Blank-safe so a missing anchor cannot invent a time."""
+        if t is None or not np.isfinite(t):
+            return None
+        s = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t))
+        return s + f".{int((t % 1) * 1000):03d}" if ms else s
+
     def _stem(self):
-        """Filename stem for this recording: subject, condition, and a take number if needed.
+        """Filename stem: subject, condition, and the WALL-CLOCK TIME the recording started.
 
-        Two separate collisions were possible with the old `rppg_pose_{tag}` naming, and both
-        lose data silently:
+        The timestamp is the date and local time of day, e.g. s01_rest_20260915-133045, because
+        the first thing you need when reconciling this against a cuff log, a lab notebook or
+        another instrument is "which recording was running at 13:30". Reading that off a unix
+        float inside the json is possible but not something you can do while a subject waits.
 
-          across subjects -- subject 2's 'rest' overwrote subject 1's, since only the condition
-                             was in the name
-          across takes    -- re-recording 'rest' because the first was poor destroyed the first,
-                             and you cannot tell afterwards which one survived
+        It also removes the two silent-overwrite paths the old `rppg_pose_{tag}` naming had --
+        subject 2's 'rest' replacing subject 1's, and a re-take destroying the original -- since
+        two recordings cannot start in the same second. The take counter stays as a backstop for
+        exactly that case rather than as the main mechanism.
 
-        So the subject goes in the name, and an existing file is never overwritten: the take
-        number increments instead. Disk is cheap and a subject with a cuff on their arm is not.
+        Local time, not UTC: it has to match the wall clock on the lab wall. The unix timestamps
+        in the json remain the unambiguous record for anything automated.
         """
-        base = f"{self.subject}_{self.tag}" if self.subject else self.tag
+        t = self.t_rec_wall if np.isfinite(self.t_rec_wall) else time.time()
+        when = time.strftime("%Y%m%d-%H%M%S", time.localtime(t))
+        base = f"{self.subject}_{self.tag}_{when}" if self.subject else f"{self.tag}_{when}"
         if not (DATA / f"rppg_pose_{base}.json").exists():
             return base
         k = 2
@@ -394,7 +411,7 @@ class Worker(QtCore.QThread):
         filtered, quals, hrs, stages_all = [], [], [], {}
         for i in range(acc.shape[1]):
             rgb = acc[:, i, :]; good = np.isfinite(rgb).all(1)
-            if good.mean() < .6:
+            if good.mean() < P.MIN_FRAME_FRAC:
                 filtered.append(None); quals.append(0.); hrs.append(np.nan); continue
             fill = np.stack([np.interp(tu, T[good], rgb[good, c]) for c in range(3)], 1)
             bp = MTH.extract(fill, fs, self.method)
@@ -411,6 +428,7 @@ class Worker(QtCore.QThread):
         # site including flawless ones.
         cons = P.consensus_hr(hrs, quals)
         ok = np.zeros(len(filtered), bool)
+        ok_strict = np.zeros(len(filtered), bool)
         details = []
         for i, x in enumerate(filtered):
             if x is None:
@@ -418,15 +436,35 @@ class Worker(QtCore.QThread):
                                 "ibi_sd": np.nan, "fail": ["short"]})
                 continue
             ok[i], _, _, _ = P.plausible(x, fs, cons)
-            details.append(P.gate_detail(x, fs, cons))
-        if ok.sum() < 6:
-            _, lines = P.gate_report(details, np.asarray(seg).astype(str))
+            d = P.gate_detail(x, fs, cons)
+            details.append(d)
+            # The strict verdict is recorded even under a relaxed profile, so a permissive
+            # recording can still be analysed honestly afterwards instead of having to be redone.
+            ok_strict[i] = P.passes_strict(d["hr"], d["snr"], d["frac"], d["ibi_sd"], cons)
+        if ok.sum() < P.MIN_SITES:
+            _, lines = P.gate_report(details, np.asarray(seg).astype(str), P.MIN_SITES)
             return "<br>".join(lines), False
         cons = cons if cons is not None else float("nan")
         out = {"tag": self.tag, "fps": fs, "n_frames": len(T), "n_points": int(acc.shape[1]),
                "n_accepted": int(ok.sum()), "consensus_hr": cons,
+               "gate_profile": P.PROFILE, "n_accepted_strict": int(ok_strict.sum()),
+               # The thresholds actually in force, not just their preset name: the SNR gate can
+               # be dialled at the bench, and a preset name alone would not recover the number.
+               "gates": {"min_snr": P.MIN_SNR, "min_peak_frac": P.MIN_PEAK_FRAC,
+                         "hr_tol_bpm": P.HR_TOL_BPM, "ibi_sd_max_ms": P.IBI_SD_MAX_MS,
+                         "min_sites": P.MIN_SITES, "min_frame_frac": P.MIN_FRAME_FRAC},
+               "method": self.method,
                "path_cm": self.live.get("path_cm", float("nan")),
-               "t_wall_capture": self.t_wall, "t_wall_record": self.t_rec_wall}
+               "t_wall_capture": self.t_wall, "t_wall_record": self.t_rec_wall,
+               # Local clock times beside the unix floats: these are what you actually compare
+               # against a cuff printout or a lab notebook. Milliseconds kept on the record
+               # start, since that is the instant every sync mark is measured from.
+               "clock_record": self._iso(self.t_rec_wall, ms=True),
+               "clock_end": self._iso(self.t_rec_wall + float(T[-1] - T[0])
+                                      if np.isfinite(self.t_rec_wall) else float("nan")),
+               "clock_capture": self._iso(self.t_wall),
+               "duration_s": round(float(T[-1] - T[0]), 3),
+               "timezone": time.strftime("%Z%z")}
         # Marks and cuff readings are re-expressed as offsets into THIS recording's own clock, so
         # the saved file can be aligned offline without also needing the session file. They are
         # copied, not moved: the session file remains the authority.
@@ -447,15 +485,24 @@ class Worker(QtCore.QThread):
         best = int(np.argmax(quals))
         np.savez(DATA / f"rppg_pose_{stem}.npz",
                  sigs=np.stack([x if x is not None else np.zeros(len(tu)) for x in filtered]),
-                 accepted=ok, quals=quals, hrs=hrs, dist=dist, seg=np.asarray(seg), fs=fs,
+                 accepted=ok, accepted_strict=ok_strict, gate_profile=P.PROFILE,
+                 quals=quals, hrs=hrs, dist=dist, seg=np.asarray(seg), fs=fs,
                  # The per-channel means BEFORE any extraction, plus their timestamps. Without
                  # these the npz holds only one method's output, so a recording could never be
                  # re-analysed with POS or ICA afterwards -- a whole session would have to be
                  # repeated to change that choice. ~1.5 MB for a 60 s run, which is nothing.
                  raw_rgb=acc, t=T, method=self.method,
                  **stages_all.get(best, {}))
-        return (f"saved as <b>rppg_pose_{stem}</b><br>HR {cons:.0f} bpm, "
-                f"{ok.sum()}/{len(ok)} sites accepted at {fs:.0f} fps"), True
+        msg = (f"saved as <b>rppg_pose_{stem}</b><br>HR {cons:.0f} bpm, "
+               f"{ok.sum()}/{len(ok)} sites accepted at {fs:.0f} fps")
+        if P.PROFILE != "strict":
+            # Never let a permissive recording read like a clean one. The strict count is the
+            # number that answers "is this a measurement"; the permissive count only answers
+            # "did anything come through at all".
+            msg += (f"<br><b>gate profile: {P.PROFILE}</b> -- only "
+                    f"<b>{ok_strict.sum()}/{len(ok)}</b> sites would pass STRICT. "
+                    f"Use this to inspect the signal, not to claim a result.")
+        return msg, True
 
 
 class Main(QtWidgets.QMainWindow):
@@ -557,6 +604,34 @@ class Main(QtWidgets.QMainWindow):
             "pca   orthogonal cousin of ICA; a useful disagreement check\n"
             "green raw green channel -- baseline only, fooled by in-band light flicker")
         f.addWidget(QtWidgets.QLabel("Extraction method")); f.addWidget(self.meth)
+        f.addSpacing(6)
+        self.prof = QtWidgets.QComboBox()
+        for p in ("strict", "relaxed", "off"):
+            self.prof.addItem(p)
+        self.prof.setCurrentText(P.PROFILE)
+        self.prof.currentTextChanged.connect(self._set_profile)
+        self.prof.setToolTip(
+            "strict   SNR>=6, 6 sites -- the only setting whose output is a measurement\n"
+            "relaxed  SNR>=2.5, 3 sites -- see marginal signal while it is still recognisable\n"
+            "off      SNR>=1.2, 1 site -- shows almost anything, INCLUDING NOISE (noise scores\n"
+            "         1.9-2.7 on this metric), for checking lighting and ROI placement\n\n"
+            "The strict verdict is saved either way, as accepted_strict in the npz.")
+        f.addWidget(QtWidgets.QLabel("Quality gates")); f.addWidget(self.prof)
+        srow = QtWidgets.QHBoxLayout()
+        self.snr_box = QtWidgets.QDoubleSpinBox()
+        self.snr_box.setRange(0.0, 60.0); self.snr_box.setDecimals(1)
+        self.snr_box.setSingleStep(0.1); self.snr_box.setValue(P.MIN_SNR)
+        self.snr_box.valueChanged.connect(self._set_snr)
+        self.snr_box.setToolTip(
+            "The SNR gate, directly. Picking a profile sets this; you can then dial it.\n"
+            "For scale, measured on this pipeline: band-passed noise 1.9-2.7,\n"
+            "weak-but-real pulse 2.6+, pulse in noise ~48, clean pulse ~440.\n"
+            "The value used is saved with every recording.")
+        srow.addWidget(QtWidgets.QLabel("min SNR")); srow.addWidget(self.snr_box)
+        f.addLayout(srow)
+        self.lbl_prof = QtWidgets.QLabel(); self.lbl_prof.setObjectName("hint")
+        self.lbl_prof.setWordWrap(True); self.lbl_prof.setTextFormat(QtCore.Qt.RichText)
+        f.addWidget(self.lbl_prof)
         # The raw per-channel means are saved with every recording, so this choice is not
         # destructive -- any recording can be re-extracted with any method afterwards.
         mnote = QtWidgets.QLabel(
@@ -765,6 +840,36 @@ class Main(QtWidgets.QMainWindow):
             self.res_msg.setText(self.res_msg.text() + "<br>No figures produced yet.")
 
     # ---------------------------------------------------------------- controls
+    def _set_snr(self, v):
+        """Dial the SNR gate directly, without leaving the current profile."""
+        P.set_min_snr(v)
+        if self.worker:
+            self.worker.profile = f"{self.prof.currentText()}(snr{v:g})"
+        self.statusBar().showMessage(f"min SNR = {v:g}", 4000)
+
+    def _set_profile(self, name):
+        """Switch quality-gate thresholds, and say plainly what that does and does not buy."""
+        p = P.set_profile(name)
+        # Reflect the profile's SNR in the box without re-triggering _set_snr through the signal.
+        if hasattr(self, "snr_box"):
+            self.snr_box.blockSignals(True)
+            self.snr_box.setValue(p["MIN_SNR"])
+            self.snr_box.blockSignals(False)
+        if self.worker:
+            self.worker.profile = name
+        if name == "strict":
+            self.lbl_prof.setText(
+                f"SNR&ge;{p['MIN_SNR']:.0f}, {p['MIN_SITES']} sites. Output is a measurement.")
+        else:
+            self.lbl_prof.setText(
+                f"SNR&ge;{p['MIN_SNR']:.1f}, {p['MIN_SITES']} site(s). "
+                f"<b>Noise scores 1.9-2.7 on this metric</b>, so this shows signal that is not "
+                f"necessarily a pulse. The strict verdict is still saved as "
+                f"<code>accepted_strict</code>, and recordings are tagged "
+                f"<code>{name}</code>.")
+        self.statusBar().showMessage(f"quality gates: {name}", 5000)
+        self._refresh_bp()
+
     def _set_prop(self, on):
         self._prop = bool(on)
         if self.worker:
@@ -958,6 +1063,10 @@ class Main(QtWidgets.QMainWindow):
         self.worker.subject = BP.slug(self.subject.text())
         self.worker.method = self.meth.currentText()
         self.worker.propagation = self.cb_prop.isChecked()
+        # Re-assert the profile on the worker's thread-visible state: set_profile mutates module
+        # globals, but the worker also records which profile the run was made under.
+        self.worker.profile = self.prof.currentText()
+        P.set_profile(self.prof.currentText())
         self.worker.frame.connect(self._on_frame)
         self.worker.metrics.connect(self._on_metrics)
         self.worker.status.connect(self.statusBar().showMessage)

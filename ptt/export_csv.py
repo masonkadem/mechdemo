@@ -43,9 +43,14 @@ EXPORT = ROOT / "export"
 CALIB_COLS = ["i", "iso", "t_rel_s", "label", "sbp", "dbp", "map",
               "ptt_ms", "spread_ms", "hr", "path_cm", "pwv_ms", "ln_pwv", "usable"]
 MARK_COLS = ["i", "iso", "t_rel_s", "t_wall", "label", "note", "recording", "ptt_ms", "hr"]
-SUMMARY_COLS = ["file", "subject", "tag", "session", "fps", "n_frames", "n_points",
-                "n_accepted", "consensus_hr", "path_cm", "t_wall_capture", "t_wall_record",
-                "n_marks", "n_calib"]
+SUMMARY_COLS = ["file", "subject", "tag", "session",
+                # Clock times first after the identifiers: reconciling a recording against a cuff
+                # log or a lab notebook starts with "which run was going at 13:30", and that
+                # should be readable in the leftmost columns rather than decoded from a float.
+                "clock_record", "clock_end", "duration_s", "timezone",
+                "fps", "n_frames", "n_points", "n_accepted", "n_accepted_strict",
+                "gate_profile", "method", "consensus_hr", "path_cm",
+                "t_wall_capture", "t_wall_record", "clock_capture", "n_marks", "n_calib"]
 FIT_COLS = ["target", "mode", "n", "intercept", "coef_ln_pwv", "coef_hr",
             "sigma_mmHg", "hr_term", "note"]
 

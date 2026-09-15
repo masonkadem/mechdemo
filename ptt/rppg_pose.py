@@ -60,6 +60,62 @@ MIN_SNR = 6.0             # dominant peak vs MEDIAN in-band power -- the gate th
 # pulse-in-noise and ~1e5 for a clean pulse.
 HR_TOL_BPM = 12.0         # a patch must agree with the consensus HR within this
 IBI_SD_MAX_MS = 220.0     # implausible beat-to-beat scatter => not a pulse
+MIN_SITES = 6             # accepted patches needed before a recording is written
+MIN_FRAME_FRAC = 0.6      # a patch needs this share of frames with usable pixels
+
+# Gate profiles. The numbers above are the `strict` profile and stay the default.
+#
+# `relaxed` and `off` exist for the bench, where the question is "what does the sensor actually
+# see" rather than "is this a measurement". They are NOT a way to get a result out of a bad
+# recording: measured noise scores 1.9-2.7 on the peak/median SNR (see MIN_SNR above), so an
+# `off` threshold of 1.2 passes noise BY DESIGN. Every recording therefore stores the profile it
+# was captured under, and the STRICT verdict is saved alongside the permissive one, so a later
+# analysis can always ask "which of these sites would have passed properly?" -- see
+# `accepted_strict` in the npz. Lowering a gate changes what you can look at; it must never
+# change what you are allowed to claim.
+PROFILES = {
+    "strict":  dict(MIN_SNR=6.0, MIN_PEAK_FRAC=0.12, HR_TOL_BPM=12.0,
+                    IBI_SD_MAX_MS=220.0, MIN_SITES=6, MIN_FRAME_FRAC=0.60),
+    "relaxed": dict(MIN_SNR=2.5, MIN_PEAK_FRAC=0.06, HR_TOL_BPM=25.0,
+                    IBI_SD_MAX_MS=400.0, MIN_SITES=3, MIN_FRAME_FRAC=0.40),
+    "off":     dict(MIN_SNR=1.0, MIN_PEAK_FRAC=0.0, HR_TOL_BPM=180.0,
+                    IBI_SD_MAX_MS=1e9, MIN_SITES=1, MIN_FRAME_FRAC=0.10),
+}
+PROFILE = "strict"
+
+
+def set_min_snr(v):
+    """Override just the SNR gate, keeping the rest of the active profile.
+
+    Exposed because SNR is the gate that actually decides what you can see, and the useful value
+    is a property of YOUR rig -- lighting, camera, skin tone, ROI size -- not something a preset
+    can know. A profile gets you to the right neighbourhood; this sets the number.
+
+    The value used is written into every recording, so a threshold typed at the bench is still
+    recoverable at analysis time.
+    """
+    global MIN_SNR
+    MIN_SNR = float(v)
+    return MIN_SNR
+
+
+def set_profile(name):
+    """Switch gate thresholds. Rebinds the module globals so every reader sees one profile.
+
+    Deliberately mutates the existing names rather than introducing a parallel config object:
+    `MIN_SNR` is read from this module by the app, by rppg_methods and by consensus_hr, and a
+    second source of truth would let those drift apart -- which is the class of bug that made a
+    nan consensus reject every site.
+    """
+    global MIN_SNR, MIN_PEAK_FRAC, HR_TOL_BPM, IBI_SD_MAX_MS, MIN_SITES, MIN_FRAME_FRAC, PROFILE
+    if name not in PROFILES:
+        raise ValueError(f"unknown profile {name!r}; choose from {sorted(PROFILES)}")
+    p = PROFILES[name]
+    MIN_SNR, MIN_PEAK_FRAC = p["MIN_SNR"], p["MIN_PEAK_FRAC"]
+    HR_TOL_BPM, IBI_SD_MAX_MS = p["HR_TOL_BPM"], p["IBI_SD_MAX_MS"]
+    MIN_SITES, MIN_FRAME_FRAC = p["MIN_SITES"], p["MIN_FRAME_FRAC"]
+    PROFILE = name
+    return p
 
 # (name, (landmark_a, landmark_b), n_patches, (dist_a_cm, dist_b_cm), y_offset_frac)
 # Landmarks are MediaPipe Pose indices. Distances are nominal adult values, overridable.
@@ -217,6 +273,21 @@ def plausible(x, fs, consensus_hr=None):
     if ok and consensus_hr is not None and np.isfinite(consensus_hr):
         ok = abs(hr - consensus_hr) <= HR_TOL_BPM
     return bool(ok), hr, snr, ibisd
+
+
+def passes_strict(hr, snr, frac, ibisd, cons=None):
+    """The `strict` verdict for one site, whatever profile is currently active.
+
+    Saved beside the permissive verdict so a relaxed recording can still be analysed honestly
+    later. Takes already-measured values rather than re-deriving them, so it cannot disagree with
+    the numbers the permissive gate saw.
+    """
+    s = PROFILES["strict"]
+    ok = (snr >= s["MIN_SNR"] and frac >= s["MIN_PEAK_FRAC"] and 40 <= hr <= 180
+          and (not np.isfinite(ibisd) or ibisd <= s["IBI_SD_MAX_MS"]))
+    if ok and cons is not None and np.isfinite(cons):
+        ok = abs(hr - cons) <= s["HR_TOL_BPM"]
+    return bool(ok)
 
 
 def consensus_hr(hrs, quals):
