@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\small
+\caption{Mechanism-restricted gradient-boosted models. Rate features are the shortcut identified by the causal audit; arrival time is the quantity the governing law sanctions. DBP MAE (mmHg).}
+\label{tab:mechanism}
+\begin{tabular}{l r r r r r l}
+\toprule
+Feature set & $n$ & $k{=}0$ & $k{=}20$ & CalBased & AAMI & What the model leans on \\
+\midrule
+full (83 + demo) & 85 & 7.13 & 4.59 & 4.63 & 11.63 & age; body mass index \\
+no shortcut (rate removed) & 74 & 7.36 & 4.57 & 4.66 & 11.90 & age; body mass index \\
+no shortcut, no demo & 72 & 7.21 & 4.89 & 6.30 & 11.00 & 10th-percentile pulse height (how low the trough sits); pulse-shape asymmetry (lopsidedness of the wave) \\
+PAT only & 6 & 8.47 & 6.04 & 8.19 & 16.11 & pulse arrival time to the pulse peak; xcorr peak \\
+PAT forced (PAT + morphology) & 72 & 7.06 & 4.89 & 6.34 & 10.91 & 10th-percentile pulse height (how low the trough sits); pulse-shape asymmetry (lopsidedness of the wave) \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,26 @@
+\begin{table}[t]
+\centering
+\small
+\caption{Calibration burden under \emph{fine-tuning}: diastolic BP mean absolute error (mmHg) when a per-patient linear head is fitted on each model's representation from $k$ cuff readings, scored on held-out segments after a gap. Median over 144 calibration-free test patients.}
+\label{tab:calib-finetune}
+\begin{tabular}{l r rrrrrrr}
+\toprule
+Model & Params & $k{=}1$ & $k{=}2$ & $k{=}3$ & $k{=}5$ & $k{=}10$ & $k{=}20$ & $k{=}50$ \\
+\midrule
+\multicolumn{9}{l}{\textit{No model}} \\
+\quad average of k readings & 1 & 7.14 & 6.47 & 6.30 & 5.96 & 5.84 & 5.71 & 5.58 \\
+\multicolumn{9}{l}{\textit{Hand-crafted}} \\
+\quad PTT equation & 2 & 7.14 & 7.96 & 7.57 & 6.41 & 6.08 & 5.74 & 5.65 \\
+\quad PPG-only dicrotic notch & 2 & 7.14 & 6.81 & 6.56 & 5.73 & 5.57 & 5.45 & 5.36 \\
+\multicolumn{9}{l}{\textit{Feature models}} \\
+\quad waveform features (83) & 84 & 7.14 & 9.02 & 7.32 & 6.13 & 5.29 & 4.22 & 3.75 \\
+\multicolumn{9}{l}{\textit{Deep networks}} \\
+\quad lenet1d & 129 & 7.14 & 7.19 & 6.60 & 6.35 & 6.37 & 5.75 & 5.66 \\
+\quad inception1d & 257 & 7.14 & 7.14 & 5.76 & 4.91 & 4.08 & 3.63 & 2.96 \\
+\quad xresnet1d50 & 513 & 7.14 & 7.00 & 5.78 & 4.98 & 4.25 & 3.82 & 3.10 \\
+\quad xresnet1d101 & 513 & 7.14 & 7.41 & 5.87 & 5.02 & 4.34 & 3.97 & 3.41 \\
+\quad transformer & 65 & 7.14 & 7.61 & 6.13 & 5.37 & 5.08 & 4.89 & 4.50 \\
+\quad MAE transformer (self-sup) & 129 & 7.14 & 7.69 & 6.15 & 5.55 & 4.87 & 4.46 & 3.77 \\
+\bottomrule
+\end{tabular}
+\end{table}

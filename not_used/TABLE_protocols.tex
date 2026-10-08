@@ -1,0 +1,44 @@
+\begin{table}[t]
+\centering
+\small
+\caption{Diastolic BP mean absolute error (mmHg) across the three PulseDB protocols. CalFree and AAMI are calibration-free; CalBased shares 100\% of its subjects with training and is therefore an upper bound obtainable only for patients already seen during training. $k$ is the number of per-subject calibration anchors, each fitting a single offset from $k$ cuff readings. The final row is the error of predicting each subject's own mean.}
+\label{tab:protocols}
+\begin{tabular}{l r r r r r r}
+\toprule
+Model & Complexity & \multicolumn{3}{c}{CalFree} & CalBased & AAMI \\
+\cmidrule(lr){3-5}
+ & & $k{=}0$ & $k{=}5$ & $k{=}20$ & & \\
+\midrule
+\multicolumn{7}{l}{\textit{Feature models}} \\
+\quad gbm default (83) & 50,400 leaves & 6.90 & 5.15 & 4.82 & 6.16 & 10.81 \\
+\quad gbm default + demo & 50,400 leaves & 7.13 & 4.94 & 4.59 & 4.62 & 11.63 \\
+\quad gbm deep + demo & 190,500 leaves & 7.32 & 4.97 & 4.48 & 3.87 & 11.00 \\
+\quad gbm single tree & 32 leaves & 7.98 & 5.87 & 5.52 & 7.95 & 12.85 \\
+\multicolumn{7}{l}{\textit{Deep networks}} \\
+\quad lenet1d & 658,786 par & 7.45 & 5.32 & 5.07 & 6.77 & 11.87 \\
+\quad inception1d & 472,450 par & 7.28 & 5.09 & 4.92 & 3.84 & 10.43 \\
+\quad xresnet1d50 & 886,850 par & 7.65 & 5.01 & 4.74 & 3.88 & 10.95 \\
+\quad xresnet1d101 & 1,805,122 par & 7.43 & 5.22 & 4.93 & 5.08 & 11.60 \\
+\quad transformer & 107,010 par & 7.73 & 5.67 & 5.37 & 7.51 & 12.38 \\
+\midrule
+Predict subject mean & 0 & -- & -- & -- & 5.11 & 4.45 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\small
+\caption{Highest-gain features per gradient-boosted variant.}
+\label{tab:features}
+\begin{tabular}{l l}
+\toprule
+Model & Top features by split gain \\
+\midrule
+gbm default (83) & \texttt{ppg\_p10}, \texttt{ppg\_skew\_g}, \texttt{t\_c}, \texttt{dw10}, \texttt{pow\_hf} \\
+gbm default + demo & \texttt{age}, \texttt{bmi}, \texttt{ppg\_p10}, \texttt{ppg\_skew\_g}, \texttt{dw10} \\
+gbm deep + demo & \texttt{age}, \texttt{bmi}, \texttt{ppg\_p10}, \texttt{ppg\_skew\_g}, \texttt{dw10} \\
+gbm single tree & \texttt{ppg\_p10}, \texttt{t\_c}, \texttt{rr\_mean}, \texttt{ppg\_skew}, \texttt{dw10} \\
+\bottomrule
+\end{tabular}
+\end{table}

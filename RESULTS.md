@@ -128,7 +128,7 @@ dose *because* MAP fell and titrate to target, so treatment is a function of the
 before/after cancels. **Drug state must not be used as a model feature** — it encodes reverse
 causation and inverts out of distribution.
 
-Figure: [figures/fig_drug_feedback.png](figures/fig_drug_feedback.png)
+Figure: [not_used/figures/fig_drug_feedback.png](not_used/figures/fig_drug_feedback.png)
 
 ---
 

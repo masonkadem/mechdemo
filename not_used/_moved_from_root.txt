@@ -1,0 +1,170 @@
+﻿-Mason’s M1 Pro.gitignore
+apg_discovery.py
+app_faithfulness-Mason’s M1 Pro.py
+app_faithfulness.py
+audit_controls.py
+calbased_vs_anchor.py
+calib_anchors.py
+calib_families.py
+calib_features.py
+calib_finetune_table.py
+calib_gbm_finetune.py
+convert_pulsedb.py
+deep_analysis.py
+drift_analyze.py
+drift_collect.py
+drug_event_ptt.py
+drug_response.py
+eval_feature_sets.py
+eval_protocols-Mason’s M1 Pro.py
+eval_protocols.py
+features_ext.py
+features_full.py
+FEATURE_REFERENCE-Mason’s M1 Pro.md
+feature_reference.py
+fig_alignment-Mason’s M1 Pro.py
+fig_alignment.py
+fig_app_tabs-Mason’s M1 Pro.py
+fig_calibration-Mason’s M1 Pro.py
+fig_calibration.py
+fig_calibration_compare.py
+fig_calibration_strategy-Mason’s M1 Pro.py
+fig_calibration_strategy.py
+fig_channel_compare.py
+fig_composite1.py
+fig_composite2.py
+fig_datasets.py
+fig_design.py
+fig_drift.py
+fig_drug_feedback.py
+fig_equation_variants-Mason’s M1 Pro.py
+fig_equation_variants.py
+fig_feature_corr.py
+fig_for_supervisor-Mason’s M1 Pro.py
+fig_for_supervisor.py
+fig_importance_bars.py
+fig_main-Mason’s M1 Pro.py
+fig_main_noh-Mason’s M1 Pro.py
+fig_main_noh.py
+fig_mechanism_ood.py
+fig_panel_e-Mason’s M1 Pro.py
+fig_ppg_equation.py
+fig_probe.py
+fig_sfs_curve.py
+fig_shap12.py
+fig_shap_depend.py
+fig_summary.py
+fig_synth_wave.py
+fig_two_regimes.py
+fig_vascular_age.py
+fig_waveform_anno.py
+fig_waveform_clean.py
+fig_what_models_use.py
+gbm_capacity_calbased.py
+gbm_external_calib_burden.py
+gbm_external_ood.py
+gbm_faithful.py
+gbm_forward.py
+gbm_mechanism.py
+gbm_optuna.py
+gbm_physio.py
+gbm_ppg_mechanism.py
+gbm_ppg_physio.py
+gbm_sparse.py
+gbm_tune_full.py
+id_ood_sfs_table.py
+lambda_ood.py
+lightgbm_arm.py
+logs_convert.txt
+logs_deepanalysis.txt
+logs_ecgppg_final.txt
+logs_ecgppg_full.txt
+logs_families.txt
+logs_featfull.txt
+logs_featstudy-DESKTOP-ILBKDR6.txt
+logs_featstudy.txt
+logs_figs_final.txt
+logs_fixsex.txt
+logs_ft.txt
+logs_gbm_final.txt
+logs_lambda_ood.txt
+logs_mae.txt
+logs_noise.txt
+logs_optuna.txt
+logs_overnight.txt
+logs_overnight2.txt
+logs_pat_track.txt
+logs_ppgonly_track.txt
+logs_pttppg_dl.txt
+logs_run_all_chain.txt
+logs_tune.txt
+logs_vitaldb_scope.txt
+logs_weekend.txt
+logs_weekend2.txt
+logs_within_subject.txt
+logs_xattn.txt
+logs_xattn_fine.txt
+mae_finetune-Mason’s M1 Pro.py
+mae_finetune.py
+mae_pretrain_full.py
+mae_probe.py
+make_calib_features.py
+make_figures.py
+make_tables.py
+mechlib-Mason’s M1 Pro.py
+mimic_ood_calibrated.py
+NEXT-Mason’s M1 Pro.md
+noise_faithfulness.py
+ood_calibrated.py
+pat_estimators.py
+pat_groundtruth.py
+plot_tree.py
+ppg_audit.py
+precompute_recon-Mason’s M1 Pro.py
+precompute_recon.py
+pttppg_law.py
+ptt_law_check.py
+ptt_proxy_test.py
+ptt_supervised.py
+quick_unified_calib.py
+README-Mason’s M1 Pro.md
+requirements-Mason’s M1 Pro.txt
+RESULTS-Mason’s M1 Pro.md
+RESULTS_TABLES-Mason’s M1 Pro.md
+run_all.py
+run_feature_full_stream.py
+run_feature_study.py
+run_lightgbm.py
+run_overnight.py
+run_weekend.py
+run_weekend2-Mason’s M1 Pro.py
+run_weekend2.py
+sfs_select.py
+synth_waveform_audit-Mason’s M1 Pro.py
+TABLE_calib_finetune-Mason’s M1 Pro.tex
+TABLE_calib_finetune.tex
+TABLE_full-Mason’s M1 Pro.tex
+TABLE_full.aux
+TABLE_full.log
+TABLE_full.pdf
+table_full.py
+TABLE_full.tex
+table_master-Mason’s M1 Pro.py
+table_master.py
+TABLE_mechanism-Mason’s M1 Pro.tex
+TABLE_mechanism.tex
+TABLE_ppg_mechanism-Mason’s M1 Pro.tex
+TABLE_ppg_mechanism.tex
+TABLE_protocols-Mason’s M1 Pro.tex
+TABLE_protocols.tex
+validate_roll_audit.py
+vascage_construct.py
+vascage_split.py
+vascage_vitaldb.py
+vascular_age.py
+vitaldb_raw.py
+vitaldb_scope.py
+within_subject.py
+xattn_fine.py
+xattn_mae.py
+xattn_model.py
