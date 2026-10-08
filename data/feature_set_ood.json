@@ -1,0 +1,102 @@
+{
+  "importance-ranked 4 (morphology) | single tree": {
+    "n_feat": 4,
+    "ood_uncal": 11.40810343472101,
+    "ood_cal": 6.306323652409814,
+    "n_pat": 1500,
+    "features": [
+      "ppg_skew_g",
+      "ppg_p90",
+      "dw10",
+      "pow_hf"
+    ]
+  },
+  "importance-ranked 4 (morphology) | 800 trees": {
+    "n_feat": 4,
+    "ood_uncal": 12.251151731058986,
+    "ood_cal": 6.874142197660486,
+    "n_pat": 1500,
+    "features": [
+      "ppg_skew_g",
+      "ppg_p90",
+      "dw10",
+      "pow_hf"
+    ]
+  },
+  "forward-selected 4 (timing + HR) | single tree": {
+    "n_feat": 4,
+    "ood_uncal": 11.562034949299797,
+    "ood_cal": 6.628511371265235,
+    "n_pat": 1500,
+    "features": [
+      "ppg_p10",
+      "t_c",
+      "hr",
+      "delta_t"
+    ]
+  },
+  "forward-selected 4 (timing + HR) | 800 trees": {
+    "n_feat": 4,
+    "ood_uncal": 9.939199538322509,
+    "ood_cal": 6.869243354841238,
+    "n_pat": 1500,
+    "features": [
+      "ppg_p10",
+      "t_c",
+      "hr",
+      "delta_t"
+    ]
+  },
+  "forward-selected 4, no HR | single tree": {
+    "n_feat": 4,
+    "ood_uncal": 10.506749070141083,
+    "ood_cal": 6.121920413996758,
+    "n_pat": 1500,
+    "features": [
+      "ppg_p10",
+      "t_c",
+      "delta_t",
+      "apg_ce_a"
+    ]
+  },
+  "forward-selected 4, no HR | 800 trees": {
+    "n_feat": 4,
+    "ood_uncal": 9.215342635317235,
+    "ood_cal": 6.637690381155766,
+    "n_pat": 1500,
+    "features": [
+      "ppg_p10",
+      "t_c",
+      "delta_t",
+      "apg_ce_a"
+    ]
+  },
+  "PAT only | single tree": {
+    "n_feat": 6,
+    "ood_uncal": 10.05489822729221,
+    "ood_cal": 6.423171609421089,
+    "n_pat": 1500,
+    "features": [
+      "pat_foot",
+      "pat_peak",
+      "ptt_var",
+      "xcorr_lag",
+      "xcorr_peak",
+      "xcorr_width"
+    ]
+  },
+  "PAT only | 800 trees": {
+    "n_feat": 6,
+    "ood_uncal": 10.33139524417943,
+    "ood_cal": 6.779082369078318,
+    "n_pat": 1500,
+    "features": [
+      "pat_foot",
+      "pat_peak",
+      "ptt_var",
+      "xcorr_lag",
+      "xcorr_peak",
+      "xcorr_width"
+    ]
+  }
+}

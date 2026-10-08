@@ -466,7 +466,7 @@ def main():
     tag = ("_" + args.run_tag) if args.run_tag else ("_ppg" if args.ppg_only else "_ecgppg")
 
     models = ALL_MODELS if args.models == "all" else [m.strip() for m in args.models.split(",")]
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     MODEL_DIR.mkdir(exist_ok=True)

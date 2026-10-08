@@ -45,7 +45,7 @@ def main():
     sel = np.concatenate([np.where(g == s)[0][:35] for s in subs])
     X = mechlib.normalize(d["Xte"][sel][:, :, [ECG, PPG]])
     gg = g[sel]
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    dev = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
     nom = np.array([1000.0 * x / FS for x in DELT])
 
     Xs = {}

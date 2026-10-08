@@ -1,0 +1,184 @@
+{
+  "history": [
+    {
+      "n": 1,
+      "added": "ppg_skew_g",
+      "cv_mae": 14.3695336727448,
+      "features": [
+        "ppg_skew_g"
+      ]
+    },
+    {
+      "n": 2,
+      "added": "t_c",
+      "cv_mae": 14.0620040133558,
+      "features": [
+        "ppg_skew_g",
+        "t_c"
+      ]
+    },
+    {
+      "n": 3,
+      "added": "dw10",
+      "cv_mae": 13.867162410708762,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10"
+      ]
+    },
+    {
+      "n": 4,
+      "added": "apg_cd_a",
+      "cv_mae": 13.770719695097817,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_cd_a"
+      ]
+    },
+    {
+      "n": 5,
+      "added": "delta_t",
+      "cv_mae": 13.757522475301766,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_cd_a",
+        "delta_t"
+      ]
+    },
+    {
+      "n": 6,
+      "added": "hfd",
+      "cv_mae": 13.723721519315566,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_cd_a",
+        "delta_t",
+        "hfd"
+      ]
+    },
+    {
+      "n": 7,
+      "added": "vpg_min",
+      "cv_mae": 13.687138935420444,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_cd_a",
+        "delta_t",
+        "hfd",
+        "vpg_min"
+      ]
+    },
+    {
+      "n": 8,
+      "added": "ppg_p25",
+      "cv_mae": 13.66661341285981,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_cd_a",
+        "delta_t",
+        "hfd",
+        "vpg_min",
+        "ppg_p25"
+      ]
+    },
+    {
+      "n": 9,
+      "added": "crest",
+      "cv_mae": 13.627974276573426,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_cd_a",
+        "delta_t",
+        "hfd",
+        "vpg_min",
+        "ppg_p25",
+        "crest"
+      ]
+    },
+    {
+      "n": 10,
+      "added": "hrv_lf",
+      "cv_mae": 13.619003229975561,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_cd_a",
+        "delta_t",
+        "hfd",
+        "vpg_min",
+        "ppg_p25",
+        "crest",
+        "hrv_lf"
+      ]
+    },
+    {
+      "n": 11,
+      "added": "dom_freq",
+      "cv_mae": 13.619003229975561,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_cd_a",
+        "delta_t",
+        "hfd",
+        "vpg_min",
+        "ppg_p25",
+        "crest",
+        "hrv_lf",
+        "dom_freq"
+      ]
+    },
+    {
+      "n": 12,
+      "added": "hrv_lfhf",
+      "cv_mae": 13.619003229975561,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_cd_a",
+        "delta_t",
+        "hfd",
+        "vpg_min",
+        "ppg_p25",
+        "crest",
+        "hrv_lf",
+        "dom_freq",
+        "hrv_lfhf"
+      ]
+    }
+  ],
+  "ranked4": [
+    "ppg_skew_g",
+    "ppg_p90",
+    "dw10",
+    "pow_hf"
+  ],
+  "ranked4_cv": 13.981633519165317,
+  "n_segments": 30000,
+  "n_patients": 1100,
+  "leaves": 32,
+  "trees": 1,
+  "lr": 1.0,
+  "subsample": 1.0,
+  "reg_alpha": 0.0,
+  "reg_lambda": 0.0,
+  "target": "sbp",
+  "tol": 0.01,
+  "patience": 3
+}

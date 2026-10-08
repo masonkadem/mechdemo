@@ -1,0 +1,30 @@
+{
+  "PAT only | single tree": {
+    "ood_uncal": 10.052621472552783,
+    "ood_cal": 6.426732406803113,
+    "n_pat": 1524,
+    "k": 5,
+    "gap": 5
+  },
+  "PAT only | 800 trees": {
+    "ood_uncal": 10.302764206280985,
+    "ood_cal": 6.764055956082158,
+    "n_pat": 1524,
+    "k": 5,
+    "gap": 5
+  },
+  "morphology | single tree": {
+    "ood_uncal": 12.36020712494674,
+    "ood_cal": 6.473157568742551,
+    "n_pat": 1524,
+    "k": 5,
+    "gap": 5
+  },
+  "morphology | 800 trees": {
+    "ood_uncal": 13.909855911305494,
+    "ood_cal": 6.684795276889028,
+    "n_pat": 1524,
+    "k": 5,
+    "gap": 5
+  }
+}

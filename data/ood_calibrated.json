@@ -1,0 +1,38 @@
+{
+  "PAT only | single tree": {
+    "ood_uncal": 16.239305899802677,
+    "ood_cal20": NaN,
+    "n_subj": 0,
+    "n_feat": 6
+  },
+  "PAT only | 800 trees": {
+    "ood_uncal": 16.095164556110653,
+    "ood_cal20": NaN,
+    "n_subj": 0,
+    "n_feat": 6
+  },
+  "morphology | single tree": {
+    "ood_uncal": 13.091842881322295,
+    "ood_cal20": NaN,
+    "n_subj": 0,
+    "n_feat": 74
+  },
+  "morphology | 800 trees": {
+    "ood_uncal": 10.613803094853482,
+    "ood_cal20": NaN,
+    "n_subj": 0,
+    "n_feat": 74
+  },
+  "morphology + PAT | single tree": {
+    "ood_uncal": 12.778631782384693,
+    "ood_cal20": NaN,
+    "n_subj": 0,
+    "n_feat": 80
+  },
+  "morphology + PAT | 800 trees": {
+    "ood_uncal": 11.044118921849087,
+    "ood_cal20": NaN,
+    "n_subj": 0,
+    "n_feat": 80
+  }
+}

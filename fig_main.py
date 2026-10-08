@@ -1,21 +1,20 @@
-"""fig_main.py -- combined Nature-style main figure merging composites 1 and 2, compact:
+"""fig_main.py -- compact Nature-style main figure (panel letters kept from the full version):
   a  small color SBP/DBP violins (distribution shift)
-  b  short clean waveform: ECG + one cycle of PPG/VPG/APG (feature extraction)
-  c  small square mechanism-sensitivity vs OOD scatter
-  d  clean dataset table (age = median[5-95])
-  e  ID vs OOD DBP table (deep + LightGBM)
+  b  dataset table (age = median[5-95])
+  d  ID vs OOD DBP table (deep + LightGBM)
+  e  mechanism-sensitivity vs OOD scatter
+  f  linear-probe bars: cardiac period vs PAT
+  g  calibration burden
 """
 import json
 from pathlib import Path
 
 import numpy as np
-from scipy.signal import savgol_filter, find_peaks
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import physics_audit as pa
-import fig_waveform_clean as wc
 
 ROOT = Path(__file__).resolve().parent
 FIG = ROOT / "figures"
@@ -54,43 +53,6 @@ def datasets():
     return recs
 
 
-def waveform(ax_list):
-    fs = 500
-    t = np.linspace(-0.15, 0.75, int(0.9 * fs))            # short: ~1 cycle
-    ecg = wc.synth_ecg(t); foot = 0.22
-    ppg = wc.synth_ppg(t, foot); ppg = ppg / ppg.max()
-    sm = savgol_filter(ppg, 61, 3)
-    vpg = savgol_filter(np.gradient(sm), 41, 3) * fs / 100
-    apg = savgol_filter(np.gradient(np.gradient(sm)), 51, 3) * (fs / 100) ** 2
-    sigs = [(ecg, NAVY, "ECG"), (ppg, GREEN, "PPG"), (vpg, ORANGE, "VPG"), (apg, RED, "APG")]
-    for ax, (s, c, lab) in zip(ax_list, sigs):
-        ax.plot(t, s, color=c, lw=1.7)
-        ax.set_yticks([]); ax.set_xlim(-0.15, 0.75)
-        ax.set_ylabel(lab, fontsize=8.5, rotation=0, ha="right", va="center")
-        ax.spines[["top", "right", "left"]].set_visible(False)
-        ax.axhline(0, color="#eee", lw=0.7, zorder=0)
-    ax_list[0].plot(0, 1, "o", color=RED, ms=5)
-    pk = np.argmax(ppg); fi = np.argmin(np.abs(t - foot))
-    ax_list[1].plot(t[fi], ppg[fi], "o", color="black", ms=5)
-    ax_list[1].plot(t[pk], ppg[pk], "o", color=RED, ms=5)
-    ax_list[1].annotate("", xy=(foot, -0.12), xytext=(0, -0.12),
-                        arrowprops=dict(arrowstyle="<->", color="#333", lw=1.2))
-    ax_list[1].text(foot / 2, -0.28, "PAT", fontsize=7.5, ha="center", color="#333")
-    ax_list[1].set_ylim(-0.35, 1.15)
-    win = (t > foot - 0.01) & (t < foot + 0.4); idxw = np.where(win)[0]; aw = apg[idxw]
-    pk_i = idxw[find_peaks(aw)[0]]; tr_i = idxw[find_peaks(-aw)[0]]
-    ext = [pk_i[0]]
-    for arr in [tr_i, pk_i, tr_i, pk_i]:
-        cand = arr[arr > ext[-1]]
-        if len(cand):
-            ext.append(cand[0])
-    for kk, lbl in zip(ext[:5], "abcde"):
-        ax_list[3].annotate(lbl, (t[kk], apg[kk]), xytext=(0, 5 if apg[kk] > 0 else -10),
-                            textcoords="offset points", fontsize=8, fontweight="bold", ha="center")
-    ax_list[3].margins(y=0.3)
-    ax_list[3].set_xlabel("time from R-peak (s)", fontsize=8.5)
-
-
 def table(ax, hdr, rows, xcol, align, bolds, title, plabel, fs=7.6):
     ax.axis("off"); ax.set_xlim(0, 1); ax.set_ylim(0, 1)
     n = len(rows); yhead = 0.92; dy = (yhead - 0.05) / (n + 1)
@@ -117,10 +79,10 @@ def main():
     e = json.loads((ROOT / "data" / "ood_benchmark_ecgppg_full.json").read_text())["models"]
     disp0 = {"lenet1d": "LeNet", "inception1d": "Incep", "xresnet1d50": "XR50",
              "xresnet1d101": "XR101", "transformer": "Trans"}
-    fig = plt.figure(figsize=(11.5, 15.0))
-    # rows: [a violins + b table] / [c waveform + d DBP table] / [e OOD scatter + f probe bars]
-    gs = fig.add_gridspec(4, 2, height_ratios=[0.85, 1.45, 1.0, 1.05],
-                          width_ratios=[1.05, 1.15], hspace=0.55, wspace=0.3)
+    fig = plt.figure(figsize=(11.5, 12.0))
+    # rows: [a violins + b table] / [d DBP table + e OOD scatter] / [f probe bars + g calibration]
+    gs = fig.add_gridspec(3, 2, height_ratios=[0.85, 1.2, 1.0],
+                          width_ratios=[1.1, 1.1], hspace=0.55, wspace=0.3)
 
     # ---- a: violins (top-left) ----
     gsa = gs[0, 0].subgridspec(1, 2, wspace=0.35)
@@ -154,22 +116,7 @@ def main():
           drows, [0.0, 0.22, 0.35, 0.46, 0.59, 0.73, 0.93],
           ["left", "left", "right", "right", "center", "left", "left"], {0}, "Datasets", "b", fs=7.0)
 
-    # ---- c: short small waveform (middle-left) ----
-    # equal-height traces with real breathing room: the squeezed version made the APG
-    # landmarks unreadable, which is the one thing this panel exists to show
-    gsc = gs[1, 0].subgridspec(4, 1, height_ratios=[1, 1.25, 1, 1], hspace=0.30)
-    axc = [fig.add_subplot(gsc[i]) for i in range(4)]
-    waveform(axc)
-    # only the bottom trace carries the time axis; the extra spacing that un-squeezed the panel
-    # also un-shared the x axes, which put a duplicate tick row under every trace
-    for a in axc[:-1]:
-        a.set_xticklabels([])
-        a.set_xlabel("")
-        a.tick_params(axis="x", length=0)
-    axc[0].text(-0.09, 1.2, "c", transform=axc[0].transAxes, fontsize=13, fontweight="bold")
-    axc[0].set_title("Feature extraction (ECG, PPG, 1st/2nd deriv.)", fontsize=8.5, loc="left")
-
-    # ---- d: DBP MAE + mechanism table (middle-right) ----
+    # ---- d: DBP MAE + mechanism table (middle-left) ----
     gfam = json.loads((ROOT / "data" / "gbm_families.json").read_text())
     names = ["lenet1d", "inception1d", "xresnet1d50", "xresnet1d101", "transformer"]
     slopes = {n: e[n]["audit"]["dbp"]["dBP_dPTT"] for n in names}
@@ -207,15 +154,15 @@ def main():
         ["LightGBM single tree, 4 feat", "~190 par", "8.92", "12.24"],
         ["LightGBM single tree, PAT only", "~190 par", "9.34", "10.96"],
     ]
-    table(fig.add_subplot(gs[1, 1]),
+    table(fig.add_subplot(gs[1, 0]),
           ["Model", "size", "ID", "OOD"],
           erows2, [0.0, 0.60, 0.78, 0.95],
           ["left", "right", "right", "right"], {0},
           "DBP MAE (mmHg): ID VitalDB, OOD MIMIC-BP", "d", fs=6.9)
 
     disp = disp0
-    # ---- e: OOD penalty vs mechanism scatter (bottom-left, square) ----
-    axe = fig.add_subplot(gs[2, 0])
+    # ---- e: OOD penalty vs mechanism scatter (middle-right, square) ----
+    axe = fig.add_subplot(gs[1, 1])
     # Slopes come from fig_panel_e.py, which recomputes the audit with the `second_deriv`
     # arrival-time estimator. That estimator is used because it ties for the best agreement with
     # invasive arterial arrival time (r = +0.21 within subject, on 100% of segments), a criterion
@@ -239,8 +186,8 @@ def main():
     axe.text(-0.24, 1.04, "e", transform=axe.transAxes, fontsize=13, fontweight="bold")
     axe.set_title("Mechanism vs OOD robustness", fontsize=9, loc="left")
 
-    # ---- f: probe summary bars (bottom-right): PAT vs period decodable per model ----
-    axf = fig.add_subplot(gs[2, 1])
+    # ---- f: probe summary bars (bottom-left): PAT vs period decodable per model ----
+    axf = fig.add_subplot(gs[2, 0])
     ps = json.loads((ROOT / "data" / "_probe_summary.json").read_text())
     xn = np.arange(len(names)); w = 0.38
     pat = [ps[n]["pat"] for n in names]; per = [ps[n]["period"] for n in names]
@@ -264,7 +211,7 @@ def main():
     # device fits a single per-subject offset and is scored on held-out segments; k = 0 is the
     # calibration-free case. This is a different question from panel d -- "how accurate" versus
     # "how much must the user do before it works" -- and the two order the models differently.
-    axg = fig.add_subplot(gs[3, 0])
+    axg = fig.add_subplot(gs[2, 1])
     cam = json.loads((ROOT / "data" / "calib_all_models.json").read_text())
     curves = {k: {int(a): b for a, b in v["curve"].items()}
               for k, v in cam.items() if isinstance(v, dict) and "curve" in v}
@@ -291,20 +238,6 @@ def main():
     axg.set_box_aspect(0.85)          # same square as e and f, so the panel letters line up
     axg.text(-0.24, 1.04, "g", transform=axg.transAxes, fontsize=13, fontweight="bold")
     axg.set_title("Calibration burden", fontsize=9, loc="left")
-
-    # ---- h: the camera instrument (bottom-right) ----
-    # A photograph rather than a plot, deliberately: the argument the other panels build is that
-    # arrival time is worth 0.35 mmHg even measured perfectly and is recoverable from PPG at
-    # r <= 0.21, so the bottleneck is instrumentation. This is the instrument -- two optical
-    # sites, no ECG, so no pre-ejection period in the interval, and a same-distance control
-    # (face to face) printed beside the measurement.
-    axh = fig.add_subplot(gs[3, 1])
-    axh.imshow(plt.imread(str(ROOT / "figures" / "assets" / "ptt_app_crop.png")))
-    axh.set_xticks([]); axh.set_yticks([])
-    for sp in axh.spines.values():
-        sp.set_edgecolor("#cccccc"); sp.set_linewidth(0.8)
-    axh.text(-0.06, 1.04, "h", transform=axh.transAxes, fontsize=13, fontweight="bold")
-    axh.set_title("Camera transit time: two optical sites, no ECG", fontsize=9, loc="left")
 
     fig.savefig(FIG / "fig_main.png", dpi=185, bbox_inches="tight")
     fig.savefig(FIG / "fig_main.pdf", bbox_inches="tight")

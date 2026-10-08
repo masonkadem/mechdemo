@@ -36,7 +36,7 @@ from mechlib import ECG, PPG
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 KS = [0, 1, 2, 3, 5, 10, 20]
 MIN_SEG = 60
 TARGET = 1                                    # DBP

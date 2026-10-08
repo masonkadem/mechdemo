@@ -1,0 +1,86 @@
+{
+  "importance-ranked 4 (morphology, DBP-derived) | single tree": {
+    "id_uncal": 7.979930545597465,
+    "id_cal": 5.58428593662353,
+    "ood_uncal": 11.388044969344953,
+    "ood_cal": 6.29653620052958,
+    "n_feat": 4
+  },
+  "importance-ranked 4 (morphology, DBP-derived) | 800 trees": {
+    "id_uncal": 7.989703475278713,
+    "id_cal": 5.581183108641486,
+    "ood_uncal": 12.209663094489706,
+    "ood_cal": 6.883632288826122,
+    "n_feat": 4
+  },
+  "PAT only | single tree": {
+    "id_uncal": 8.175051294208789,
+    "id_cal": 6.1123910791292015,
+    "ood_uncal": 10.052621472552783,
+    "ood_cal": 6.426732406803113,
+    "n_feat": 6
+  },
+  "PAT only | 800 trees": {
+    "id_uncal": 8.445924064998591,
+    "id_cal": 6.222725655236026,
+    "ood_uncal": 10.302764206280985,
+    "ood_cal": 6.764055956082158,
+    "n_feat": 6
+  },
+  "SFS full (16feat, 150t) | single tree": {
+    "id_uncal": 7.870845088595018,
+    "id_cal": 5.531214111964616,
+    "ood_uncal": 12.017189621994564,
+    "ood_cal": 6.550063710892834,
+    "n_feat": 16
+  },
+  "SFS full (16feat, 150t) | 800 trees": {
+    "id_uncal": 7.178377843589372,
+    "id_cal": 5.097674840660247,
+    "ood_uncal": 12.436775226867155,
+    "ood_cal": 6.731944747674323,
+    "n_feat": 16
+  },
+  "SFS top-4 (150t) | single tree": {
+    "id_uncal": 8.148525337675029,
+    "id_cal": 5.545551087764109,
+    "ood_uncal": 11.82365846326108,
+    "ood_cal": 6.154330813022487,
+    "n_feat": 4
+  },
+  "SFS top-4 (150t) | 800 trees": {
+    "id_uncal": 7.7722413993635975,
+    "id_cal": 5.316645861860215,
+    "ood_uncal": 9.918102305815161,
+    "ood_cal": 7.543769895514432,
+    "n_feat": 4
+  },
+  "SFS full (9feat, 1t) | single tree": {
+    "id_uncal": 7.957892111875683,
+    "id_cal": 5.7646562850514265,
+    "ood_uncal": 12.43788101485428,
+    "ood_cal": 6.972719115788616,
+    "n_feat": 9
+  },
+  "SFS full (9feat, 1t) | 800 trees": {
+    "id_uncal": 7.480837801007496,
+    "id_cal": 5.4360971620638665,
+    "ood_uncal": 11.990729357752317,
+    "ood_cal": 6.839208598437274,
+    "n_feat": 9
+  },
+  "SFS top-4 (1t) | single tree": {
+    "id_uncal": 7.861300594684854,
+    "id_cal": 5.719948410272265,
+    "ood_uncal": 11.551218234618231,
+    "ood_cal": 6.628511371265235,
+    "n_feat": 4
+  },
+  "SFS top-4 (1t) | 800 trees": {
+    "id_uncal": 7.970954568180616,
+    "id_cal": 5.476412451146142,
+    "ood_uncal": 9.934688408121808,
+    "ood_cal": 6.867173194684636,
+    "n_feat": 4
+  }
+}

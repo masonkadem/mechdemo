@@ -1,0 +1,106 @@
+{
+  "history": [
+    {
+      "n": 1,
+      "added": "ppg_p10",
+      "cv_mae": 9.099081343065308,
+      "features": [
+        "ppg_p10"
+      ]
+    },
+    {
+      "n": 2,
+      "added": "t_c",
+      "cv_mae": 8.974048581799135,
+      "features": [
+        "ppg_p10",
+        "t_c"
+      ]
+    },
+    {
+      "n": 3,
+      "added": "hr",
+      "cv_mae": 8.868861788125416,
+      "features": [
+        "ppg_p10",
+        "t_c",
+        "hr"
+      ]
+    },
+    {
+      "n": 4,
+      "added": "delta_t",
+      "cv_mae": 8.819271721748088,
+      "features": [
+        "ppg_p10",
+        "t_c",
+        "hr",
+        "delta_t"
+      ]
+    },
+    {
+      "n": 5,
+      "added": "t_vpg_max",
+      "cv_mae": 8.795361754538689,
+      "features": [
+        "ppg_p10",
+        "t_c",
+        "hr",
+        "delta_t",
+        "t_vpg_max"
+      ]
+    },
+    {
+      "n": 6,
+      "added": "rr_sdnn",
+      "cv_mae": 8.783365160142807,
+      "features": [
+        "ppg_p10",
+        "t_c",
+        "hr",
+        "delta_t",
+        "t_vpg_max",
+        "rr_sdnn"
+      ]
+    },
+    {
+      "n": 7,
+      "added": "apg_ce_a",
+      "cv_mae": 8.767535633729858,
+      "features": [
+        "ppg_p10",
+        "t_c",
+        "hr",
+        "delta_t",
+        "t_vpg_max",
+        "rr_sdnn",
+        "apg_ce_a"
+      ]
+    },
+    {
+      "n": 8,
+      "added": "spec_rolloff",
+      "cv_mae": 8.762755908748284,
+      "features": [
+        "ppg_p10",
+        "t_c",
+        "hr",
+        "delta_t",
+        "t_vpg_max",
+        "rr_sdnn",
+        "apg_ce_a",
+        "spec_rolloff"
+      ]
+    }
+  ],
+  "ranked4": [
+    "ppg_skew_g",
+    "ppg_p90",
+    "dw10",
+    "pow_hf"
+  ],
+  "ranked4_cv": 9.044703633895594,
+  "n_segments": 30000,
+  "n_patients": 1100,
+  "leaves": 32
+}

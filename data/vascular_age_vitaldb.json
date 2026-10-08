@@ -1,0 +1,36 @@
+{
+  "predict the mean age (baseline)": {
+    "mae_mean": 12.696453752290523,
+    "mae_sd": 0.06621924103623625,
+    "r": 0.0
+  },
+  "ridge on PPG features": {
+    "mae_mean": 11.139521925376595,
+    "mae_sd": 0.15280877643419186,
+    "r": 0.43928905666982004
+  },
+  "LightGBM on PPG features": {
+    "mae_mean": 10.822251033122551,
+    "mae_sd": 0.3121796519795582,
+    "r": 0.48083770766248973
+  },
+  "_gain_over_baseline": {
+    "years": 1.8742027191679718,
+    "ci95": [
+      0.16652496314525134,
+      3.203718843729841
+    ],
+    "note": "bootstrap over the 144 subjects, not over CV splits"
+  },
+  "_meta": {
+    "n_patients": 144,
+    "n_features": 86,
+    "age_median": 60.5,
+    "age_sd": 15.433549314543445,
+    "lit_band": [
+      6.0,
+      9.0
+    ],
+    "source": "PulseDB VitalDB CalFree test subset"
+  }
+}

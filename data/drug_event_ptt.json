@@ -1,0 +1,15 @@
+{
+  "n_events": 110,
+  "median_dDBP": 0.49371337890625,
+  "frac_BP_rose": 0.5,
+  "corr_dptt_ms_dDBP": -0.10905522640303561,
+  "corr_dnotch_ms_dDBP": -0.10190535351349322,
+  "corr_dcrest_ms_dDBP": -0.08579658929458556,
+  "corr_dhr_bpm_dDBP": 0.27248816479119886,
+  "between_ptt_ms_age": 0.10127112248868042,
+  "between_ptt_ms_dbp": 0.08339801746441702,
+  "between_notch_ms_age": 0.04805685012792878,
+  "between_notch_ms_dbp": 0.10707439238368016,
+  "between_crest_ms_age": 0.08864451299533255,
+  "between_crest_ms_dbp": -0.28041456588493213
+}

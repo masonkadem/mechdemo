@@ -1,0 +1,30 @@
+{
+  "predict train mean age": {
+    "mae": 12.540737373737073,
+    "r": 0.0
+  },
+  "ridge": {
+    "mae": 9.906951674156254,
+    "r": 0.5638505375843482
+  },
+  "LightGBM": {
+    "mae": 9.172238231734022,
+    "mae_sd": 0.08465837781274768,
+    "r": 0.6850514867114686
+  },
+  "_meta": {
+    "n_train": 1100,
+    "n_test": 144,
+    "n_features": 80,
+    "gain": 3.368499142003051,
+    "gain_ci": [
+      2.1042683291946243,
+      4.70838769956855
+    ],
+    "lit_band": [
+      6.0,
+      9.0
+    ],
+    "design": "train on train subjects, score on 144 held-out CalFree subjects"
+  }
+}

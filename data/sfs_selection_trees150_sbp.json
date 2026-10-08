@@ -1,0 +1,294 @@
+{
+  "history": [
+    {
+      "n": 1,
+      "added": "ppg_skew_g",
+      "cv_mae": 14.382281692731896,
+      "features": [
+        "ppg_skew_g"
+      ]
+    },
+    {
+      "n": 2,
+      "added": "t_c",
+      "cv_mae": 14.018846300245524,
+      "features": [
+        "ppg_skew_g",
+        "t_c"
+      ]
+    },
+    {
+      "n": 3,
+      "added": "dw10",
+      "cv_mae": 13.685668664436246,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10"
+      ]
+    },
+    {
+      "n": 4,
+      "added": "apg_e_a",
+      "cv_mae": 13.464390724407084,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a"
+      ]
+    },
+    {
+      "n": 5,
+      "added": "rr_mean",
+      "cv_mae": 13.30057700007373,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean"
+      ]
+    },
+    {
+      "n": 6,
+      "added": "pow_hf",
+      "cv_mae": 13.16392118589701,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean",
+        "pow_hf"
+      ]
+    },
+    {
+      "n": 7,
+      "added": "sw75",
+      "cv_mae": 13.067113507285445,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean",
+        "pow_hf",
+        "sw75"
+      ]
+    },
+    {
+      "n": 8,
+      "added": "crest_time_ratio",
+      "cv_mae": 13.018141108307448,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean",
+        "pow_hf",
+        "sw75",
+        "crest_time_ratio"
+      ]
+    },
+    {
+      "n": 9,
+      "added": "delta_t",
+      "cv_mae": 12.962734511632672,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean",
+        "pow_hf",
+        "sw75",
+        "crest_time_ratio",
+        "delta_t"
+      ]
+    },
+    {
+      "n": 10,
+      "added": "vpg_ratio",
+      "cv_mae": 12.91816621608358,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean",
+        "pow_hf",
+        "sw75",
+        "crest_time_ratio",
+        "delta_t",
+        "vpg_ratio"
+      ]
+    },
+    {
+      "n": 11,
+      "added": "hrv_hf",
+      "cv_mae": 12.885760175903032,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean",
+        "pow_hf",
+        "sw75",
+        "crest_time_ratio",
+        "delta_t",
+        "vpg_ratio",
+        "hrv_hf"
+      ]
+    },
+    {
+      "n": 12,
+      "added": "dw25",
+      "cv_mae": 12.859969342742536,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean",
+        "pow_hf",
+        "sw75",
+        "crest_time_ratio",
+        "delta_t",
+        "vpg_ratio",
+        "hrv_hf",
+        "dw25"
+      ]
+    },
+    {
+      "n": 13,
+      "added": "spec_ent",
+      "cv_mae": 12.834689621744284,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean",
+        "pow_hf",
+        "sw75",
+        "crest_time_ratio",
+        "delta_t",
+        "vpg_ratio",
+        "hrv_hf",
+        "dw25",
+        "spec_ent"
+      ]
+    },
+    {
+      "n": 14,
+      "added": "dw90",
+      "cv_mae": 12.817868821888311,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean",
+        "pow_hf",
+        "sw75",
+        "crest_time_ratio",
+        "delta_t",
+        "vpg_ratio",
+        "hrv_hf",
+        "dw25",
+        "spec_ent",
+        "dw90"
+      ]
+    },
+    {
+      "n": 15,
+      "added": "t_b",
+      "cv_mae": 12.803877176504331,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean",
+        "pow_hf",
+        "sw75",
+        "crest_time_ratio",
+        "delta_t",
+        "vpg_ratio",
+        "hrv_hf",
+        "dw25",
+        "spec_ent",
+        "dw90",
+        "t_b"
+      ]
+    },
+    {
+      "n": 16,
+      "added": "reflect_be",
+      "cv_mae": 12.800963377227788,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean",
+        "pow_hf",
+        "sw75",
+        "crest_time_ratio",
+        "delta_t",
+        "vpg_ratio",
+        "hrv_hf",
+        "dw25",
+        "spec_ent",
+        "dw90",
+        "t_b",
+        "reflect_be"
+      ]
+    },
+    {
+      "n": 17,
+      "added": "hfd",
+      "cv_mae": 12.790207125062333,
+      "features": [
+        "ppg_skew_g",
+        "t_c",
+        "dw10",
+        "apg_e_a",
+        "rr_mean",
+        "pow_hf",
+        "sw75",
+        "crest_time_ratio",
+        "delta_t",
+        "vpg_ratio",
+        "hrv_hf",
+        "dw25",
+        "spec_ent",
+        "dw90",
+        "t_b",
+        "reflect_be",
+        "hfd"
+      ]
+    }
+  ],
+  "ranked4": [
+    "ppg_skew_g",
+    "ppg_p90",
+    "dw10",
+    "pow_hf"
+  ],
+  "ranked4_cv": 13.817505934022833,
+  "n_segments": 30000,
+  "n_patients": 1100,
+  "leaves": 31,
+  "trees": 150,
+  "lr": 0.03,
+  "subsample": 0.9,
+  "reg_alpha": 0.1,
+  "reg_lambda": 0.1,
+  "target": "sbp",
+  "tol": 0.01,
+  "patience": 3
+}
