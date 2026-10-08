@@ -31,7 +31,7 @@ Design
   * slope in mmHg/ms; textbook physiology predicts NEGATIVE
 
 Reports the same three controls as audit_controls.py so the fix is verifiable:
-  positive  : BP = a/PAT + b, a<0 by construction  -> audit MUST return a clear negative slope
+  positive  : BP = a/PAT + b, a>0 by construction  -> audit MUST return a clear negative slope
   negative  : BP = const                           -> audit MUST return ~0
   amplitude : BP = f(PPG amplitude)                -> audit should be ~0 (specificity)
 """
@@ -93,6 +93,7 @@ def subject_audit(predict_fn, X, groups, fs, deltas=(-6, -4, -2, 0), target=1,
         "slope_subj_median": float(np.median(ps)) if len(ps) else float("nan"),
         "slope_subj_lo": float(np.percentile(ps, 2.5)) if len(ps) else float("nan"),
         "slope_subj_hi": float(np.percentile(ps, 97.5)) if len(ps) else float("nan"),
+        "subj_slopes": [float(v) for v in ps],
         "frac_negative": float(np.mean(ps < 0)) if len(ps) else float("nan"),
         "n_subjects": len(x_sub),
         "n_segments_kept": int(keep.sum()),
@@ -123,8 +124,9 @@ def main():
           flush=True)
 
     # ---- controls -------------------------------------------------------------
-    # positive: textbook-signed 1/PAT law. a<0 so longer PAT -> lower BP, by construction.
-    a_pat = -3.0
+    # positive: textbook-signed 1/PAT law. a>0 so longer PAT -> lower BP, by construction.
+    # (a<0 gives the physiologically INVERTED law: BP rises with PAT.)
+    a_pat = 3.0
     b_pat = float(y[ok, 1].mean() - a_pat / med)
     amp = np.array([np.ptp(x[:, PPG]) for x in X])
     amp_mod = Ridge(alpha=1.0).fit(amp[ok][:, None], y[ok, 1])

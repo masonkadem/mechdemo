@@ -9,7 +9,7 @@ Verified channel identities in the cached data:  ECG = 0, PPG = 1, ABP = 2.
 import numpy as np
 import torch
 import torch.nn as nn
-from scipy.signal import find_peaks, savgol_filter
+from scipy.signal import butter, cheby2, find_peaks, savgol_filter, sosfiltfilt
 from scipy.stats import kurtosis as _kurtosis
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
@@ -66,68 +66,79 @@ def normalize(X):
 # ----------------------------------------------------------------- PTT
 def _z(x): return (x - x.mean()) / (x.std() + 1e-8)
 
-PAT_WIN = 0.35   # s: R-peak -> PPG-foot search window (upper bound; foot lands ~0.2-0.35 s)
+# Search span for the R-peak -> PPG-foot delay. Wide on purpose: VitalDB's PPG channel carries a
+# fixed instrumental offset of several hundred ms (Ruffolo et al. 2025 report ~350 ms), so the
+# stored delay can approach or exceed one RR interval. Nothing is assumed about where in this
+# span the foot lies; the pairing below picks the delay that is the same for every beat.
+PAT_RANGE = (0.05, 1.5)   # s
+PAIR_TOL = 0.04           # s: a beat agrees with the segment delay if within this tolerance
 
 
-def _tangent_refine(pz, foot0, fs):
-    """Sub-sample the PPG foot near integer index `foot0` via the intersecting-tangent method:
-    the foot is where the horizontal line through the diastolic minimum meets the tangent at the
-    steepest point of the systolic upstroke that follows. Returns a float index."""
-    lo = max(int(foot0) - int(0.06 * fs), 0)
-    hi = min(int(foot0) + int(0.18 * fs), len(pz))
-    n = hi - lo
-    if n < 5:
-        return float(foot0)
-    win = max(int(0.03 * fs) | 1, 5)                 # odd ~30 ms smoothing window
-    win = min(win, n if n % 2 else n - 1)
-    seg = savgol_filter(pz[lo:hi], win, 3) if win >= 5 else np.asarray(pz[lo:hi], float)
-    fmin = int(np.argmin(seg))                       # diastolic minimum
-    up = seg[fmin:]                                  # systolic upstroke onward
-    if len(up) < 3:
-        return float(lo + fmin)
-    d = np.gradient(up)
-    k = int(np.argmax(d))                            # steepest upslope point
-    slope = d[k]
-    if slope <= 1e-6:
-        return float(lo + fmin)
-    i_foot = k + (up[0] - up[k]) / slope             # tangent crosses the min baseline
-    i_foot = min(max(i_foot, 0.0), len(up) - 1.0)
-    return float(lo + fmin + i_foot)
+def r_peaks(ecg, fs):
+    """ECG R-peaks, Pan-Tompkins style (Pan & Tompkins 1985): 5-15 Hz zero-phase bandpass ->
+    derivative -> square -> 150 ms moving integration -> peaks >= 0.3 s apart. The passband
+    suppresses T waves, which a plain peak-pick on the raw ECG mistakes for R peaks. Each peak is
+    placed at the largest |bandpassed ECG| within 60 ms, so inverted leads also work."""
+    bp = sosfiltfilt(butter(2, [5, 15], btype="band", fs=fs, output="sos"), ecg)
+    w = max(int(0.15 * fs), 1)
+    mwi = np.convolve(np.gradient(bp) ** 2, np.ones(w) / w, mode="same")
+    pk, _ = find_peaks(mwi, distance=max(int(0.3 * fs), 1), height=0.25 * np.percentile(mwi, 99))
+    h = int(0.06 * fs)
+    return np.array([max(p - h, 0) + int(np.argmax(np.abs(bp[max(p - h, 0):p + h]))) for p in pk], int)
 
 
-def _foot_after_r(pz, rp, fs, lo_s=0.05, hi_s=PAT_WIN):
-    """PPG foot that belongs to R-peak `rp`: the FIRST real diastolic trough (a local minimum,
-    not just the window edge) in [rp+lo_s, rp+hi_s], tangent-refined. Returns a float index or
-    None when no genuine trough falls in the physiological window -- in which case the beat is
-    rejected rather than a spurious foot invented on the descending limb (the failure mode of a
-    plain argmin-in-window when the true foot lies outside the search span)."""
-    lo = int(rp + max(int(lo_s * fs), 1))
-    hi = int(min(rp + int(hi_s * fs), len(pz)))
-    if hi - lo < 5:
-        return None
-    seg = pz[lo:hi]
-    tr, _ = find_peaks(-seg, prominence=0.15)        # require a real trough
-    if len(tr) == 0:
-        return None
-    return _tangent_refine(pz, lo + int(tr[0]), fs)
+def ppg_feet(ppg, fs):
+    """PPG pulse feet found on the PPG alone (no ECG): 4th-order Chebyshev-II 0.5-10 Hz zero-phase
+    filter (Liang et al. 2018), beats at the steepest upslope, foot by the intersecting tangent --
+    the tangent at the steepest point meets the horizontal through the preceding minimum.
+    Returns float indices."""
+    p = sosfiltfilt(cheby2(4, 20, [0.5, 10], btype="band", fs=fs, output="sos"), ppg)
+    d = np.gradient(p)
+    up, _ = find_peaks(d, distance=max(int(0.3 * fs), 1), height=0.3 * np.percentile(d, 99))
+    feet = []
+    for k in up:
+        a = max(k - int(0.3 * fs), 0)
+        tr = a + int(np.argmin(p[a:k + 1]))
+        feet.append(k - (p[k] - p[tr]) / d[k])
+    return np.array(feet, float)
+
+
+def pair_beats(r, feet, fs):
+    """Pair PPG feet with R-peaks. Every R-peak up to 1.5 s before a foot is a candidate source.
+    The segment delay is the one most beats agree on (within PAIR_TOL); among near-ties, the one
+    with the smallest spread wins. That tie-break is what resolves a delay longer than one beat:
+    the true pairing stays constant while the wrong one drifts with heart-rate variability (the
+    beat-matching idea of Ruffolo et al. 2025). Returns (foot_idx, r_idx, delay_s), aligned."""
+    cands = [[(f - q) / fs for q in r if PAT_RANGE[0] < (f - q) / fs < PAT_RANGE[1]] for f in feet]
+    best, best_key = None, None
+    for c in sorted({round(v, 3) for cs in cands for v in cs}):
+        m = [min(cs, key=lambda v: abs(v - c)) for cs in cands if cs]
+        m = [v for v in m if abs(v - c) < PAIR_TOL]
+        if len(m) >= 2:
+            key = (len(m), -np.std(m))
+            if best_key is None or key > best_key:
+                best, best_key = c, key
+    if best is None:
+        return np.array([], int), np.array([], int), np.array([])
+    # re-centre on the agreed delay, then keep the beats that match it
+    mm = [min(cs, key=lambda v: abs(v - best)) for cs in cands if cs]
+    best = float(np.median([v for v in mm if abs(v - best) < PAIR_TOL]))
+    fi, ri, dl = [], [], []
+    for f, cs in zip(feet, cands):
+        if not cs:
+            continue
+        v = min(cs, key=lambda v: abs(v - best))
+        if abs(v - best) < PAIR_TOL:
+            fi.append(int(round(f))); ri.append(int(round(f - v * fs))); dl.append(v)
+    return np.array(fi, int), np.array(ri, int), np.array(dl)
 
 
 def segment_ptt(ecg, ppg, fs):
-    """Median ECG-R-peak -> following PPG-foot delay (seconds) for one segment, using the
-    intersecting-tangent foot at the first true diastolic trough. nan if too few clean beats."""
-    ez, pz = _z(ecg), _z(ppg)
-    r, _ = find_peaks(ez, distance=max(int(0.3 * fs), 1), prominence=0.5)
-    if len(r) < 3:
-        return np.nan
-    ptts = []
-    for rp in r:
-        foot = _foot_after_r(pz, rp, fs)
-        if foot is None:
-            continue
-        ptt = (foot - rp) / fs
-        if 0.05 < ptt < 0.5:
-            ptts.append(ptt)
-    return float(np.median(ptts)) if len(ptts) >= 2 else np.nan
+    """Median ECG-R-peak -> PPG-foot delay (seconds) for one segment; nan if fewer than 3 beats
+    agree on a delay. Under a channel offset this is offset + PAT: use it for within-subject
+    changes, never as an absolute transit time."""
+    _, _, dl = pair_beats(r_peaks(ecg, fs), ppg_feet(ppg, fs), fs)
+    return float(np.median(dl)) if len(dl) >= 3 else np.nan
 
 
 def compute_ptt(X, fs, ecg_pos=ECG, ppg_pos=PPG):
@@ -136,7 +147,7 @@ def compute_ptt(X, fs, ecg_pos=ECG, ppg_pos=PPG):
     NAMING, because it matters for every claim built on this function. What is computed is
     R-peak -> PPG foot, i.e.
 
-        PAT = PEP + PTT
+        PAT = PEP + PTT   (+ any instrumental ECG-PPG offset)
 
     where PEP (pre-ejection period) is cardiac -- electrical activation to aortic valve opening --
     and only PTT carries arterial stiffness. The name `compute_ptt` is kept for compatibility with
@@ -154,33 +165,30 @@ def compute_ptt(X, fs, ecg_pos=ECG, ppg_pos=PPG):
 def segment_fiducials(ecg, ppg, fs):
     """Per-beat fiducial indices for ONE ECG+PPG segment -- the points the PAT / morphology cues
     are built from, for a sanity-check overlay. Returns a dict of index arrays:
-      r_peaks   : ECG R-peaks
-      feet      : intersecting-tangent PPG foot after each usable R-peak (int)
+      r_peaks   : all ECG R-peaks
+      r_paired  : the R-peak each foot was paired with (aligned with feet)
+      feet      : intersecting-tangent PPG feet that agree with the segment delay (int)
       sys_peaks : PPG systolic peak after each foot
       notches   : dicrotic-notch index on the downslope (only where detected)
-      pat_ms    : per-beat PAT (R-peak -> foot) in ms, aligned with feet."""
-    ez, pz = _z(ecg), _z(ppg)
-    r, _ = find_peaks(ez, distance=max(int(0.3 * fs), 1), prominence=0.5)
-    feet, sys_peaks, notches, pat_ms = [], [], [], []
-    for rp in r:
-        f = _foot_after_r(pz, rp, fs)
-        if f is None:
+      pat_ms    : per-beat delay (R-peak -> foot) in ms, aligned with feet."""
+    r = r_peaks(ecg, fs)
+    fi, ri, dl = pair_beats(r, ppg_feet(ppg, fs), fs)
+    pz = _z(ppg)
+    keep, sys_peaks, notches = [], [], []
+    for j, f in enumerate(fi):
+        hp = min(f + int(0.4 * fs), len(pz))                     # systolic peak within 400 ms
+        if f < 0 or f + 2 >= hp:
             continue
-        pat = (f - rp) / fs
-        if not (0.05 < pat < 0.5):
-            continue
-        fi = int(round(f))
-        hp = min(fi + int(0.4 * fs), len(pz))                    # systolic peak within 400 ms
-        if fi + 2 >= hp:
-            continue
-        pk = fi + int(np.argmax(pz[fi:hp]))
-        feet.append(fi); sys_peaks.append(pk); pat_ms.append(pat * 1000.0)
+        pk = f + int(np.argmax(pz[f:hp]))
+        keep.append(j); sys_peaks.append(pk)
         down = pz[pk:min(pk + int(0.4 * fs), len(pz))]           # dicrotic notch on downslope
         ni_rel, _ = find_peaks(-down, prominence=0.05)
         if len(ni_rel):
             notches.append(pk + int(ni_rel[0]))
-    return {"r_peaks": r, "feet": np.array(feet, int), "sys_peaks": np.array(sys_peaks, int),
-            "notches": np.array(notches, int), "pat_ms": np.array(pat_ms, float)}
+    keep = np.array(keep, int)
+    return {"r_peaks": r, "r_paired": ri[keep], "feet": fi[keep],
+            "sys_peaks": np.array(sys_peaks, int), "notches": np.array(notches, int),
+            "pat_ms": dl[keep] * 1000.0}
 
 
 # ----------------------------------------------------------------- model helpers
@@ -410,8 +418,8 @@ def segment_scalars(ecg, ppg, fs):
       kurt/notch/decay/peak-- PPG pulse kurtosis, dicrotic-notch height, diastolic decay, peak height
       hr                   -- heart rate (bpm); exploratory, ambiguous BP sign
       amp                  -- PPG pulse amplitude (au); negative control (removed by per-segment norm)."""
-    ez, pz = _z(ecg), _z(ppg)
-    r, _ = find_peaks(ez, distance=max(int(0.3 * fs), 1), prominence=0.5)
+    pz = _z(ppg)
+    r = r_peaks(ecg, fs)
     out = {"pat": np.nan, "hr": np.nan, "amp": np.nan, "period": np.nan}
     out.update(wave_morphology(ppg, fs))
     pf = _pulse_feet(pz, fs)                                  # cardiac period from PPG feet
@@ -419,16 +427,7 @@ def segment_scalars(ecg, ppg, fs):
         out["period"] = float(np.median(np.diff(pf)) / fs)
     if len(r) < 3:
         return out
-    pats = []
-    for rp in r:
-        foot = _foot_after_r(pz, rp, fs)                     # tangent foot at first true trough
-        if foot is None:
-            continue
-        ptt = (foot - rp) / fs
-        if 0.05 < ptt < 0.5:
-            pats.append(ptt)
-    if len(pats) >= 2:
-        out["pat"] = float(np.median(pats))
+    out["pat"] = segment_ptt(ecg, ppg, fs)                   # paired R-peak -> tangent foot
     rr = np.diff(r) / fs; rr = rr[(rr > 0.3) & (rr < 2.0)]
     if len(rr) >= 1:
         out["hr"] = float(60.0 / np.median(rr))

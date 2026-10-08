@@ -38,30 +38,20 @@ figures/*.pdf
 !figures/assets/
 !figures/assets/*.png
 !figures/fig_main.*
-!figures/fig_main_noh.*
-!figures/fig_monotonicity_*.*
-!figures/fig_calibration.*
-!figures/fig_shap_reference.*
-!figures/fig_feature_scatter.*
-!figures/fig_synth_wave.*
-!figures/fig_summary.*
-!figures/fig_drug_feedback.*
-!figures/fig_app_tabs.*
-!figures/fig_channel_compare.*
-!figures/fig_probe.*
-!figures/fig_shap12_dbp.*
-!figures/fig_shap12_sbp.*
-!figures/fig_importance_bars.*
-!figures/fig_waveform_clean.*
-!figures/fig_mechanism_ood.*
-!figures/fig_feature_corr.*
-!figures/fig_apg_discovery.*
-!figures/fig_calib_features.*
+!figures/fig_audit.*
+!figures/fig_beat_templates.*
+
+# retired figures: the ones already tracked stay tracked; new ones dropped here are not added
+not_used/figures/
 
 # keep small JSON results (data/*.json) but not the private "_" caches
 data/_*.npz
 data/_*.pkl
 data/_*.json
+data/_*.csv
+
+# local Claude Code settings
+.claude/
 
 # pose model: 5.5 MB, fetched on first run by ptt/run_app.command
 ptt/models/*.task
