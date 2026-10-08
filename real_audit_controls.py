@@ -17,7 +17,7 @@ mini test set (144 patients, none of them in the training file):
      Plus `ppg_small`: shifts of 8-16 ms only, inside the natural within-patient PAT range, so
      the response is not an artefact of inputs the model never saw.
 
-  3. THE DATA'S OWN SLOPE. Within each patient, regress DBP on measured PAT across segments
+  3. THE DATA'S OWN SLOPE. Within each patient, regress BP on measured PAT across segments
      (PPG-based, and arterial-line based as a reference). If the data barely carries the
      PAT->BP relation, a model has little reason to learn it.
 
@@ -119,12 +119,13 @@ def subject_slopes(preds, rows, groups):
             "slopes": sl.tolist()}
 
 
-def data_slopes(Xs, ys, gs, fs):
-    """Within-patient DBP-vs-PAT slopes from the data itself (no model), PPG and ABP PAT."""
+def data_slopes(Xs, ys, gs, fs, ti=1):
+    """Within-patient BP-vs-PAT slopes from the data itself (no model), PPG and ABP PAT.
+    ti selects the label column: 0 = SBP, 1 = DBP."""
     out = {}
     for name, ch in (("ppg_pat", PPG), ("abp_pat", ABP)):
         pat = np.concatenate([mechlib.compute_ptt(X, fs, ecg_pos=ECG, ppg_pos=ch) for X in Xs]) * 1000
-        y = np.concatenate(ys)[:, 1]; g = np.concatenate(gs)
+        y = np.concatenate(ys)[:, ti]; g = np.concatenate(gs)
         sl, xs, yy = [], [], []
         for s in np.unique(g):
             m = (g == s) & np.isfinite(pat)
@@ -144,22 +145,26 @@ def data_slopes(Xs, ys, gs, fs):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", type=int, default=5)
+    ap.add_argument("--target", choices=["dbp", "sbp"], default="dbp")
     args = ap.parse_args()
+    ti = {"sbp": 0, "dbp": 1}[args.target]
+    # DBP keeps the original file names; SBP gets its own (no original SBP checkpoint exists)
+    suffix = "" if args.target == "dbp" else f"_{args.target}"
 
     deep = mechlib.load_mini(str(DATA / "vitaldb_mini_deep.npz")); fs = int(deep["fs"])
     two = [ECG, PPG]
-    Xtr, ytr = mechlib.normalize(deep["Xtr"][:, :, two]), deep["ytr"][:, 1]
-    Xva, yva = mechlib.normalize(deep["Xva"][:, :, two]), deep["yva"][:, 1]
+    Xtr, ytr = mechlib.normalize(deep["Xtr"][:, :, two]), deep["ytr"][:, ti]
+    Xva, yva = mechlib.normalize(deep["Xva"][:, :, two]), deep["yva"][:, ti]
     mini = mechlib.load_mini(str(DATA / "vitaldb_mini.npz"))
-    Xte, yte, gte = mechlib.normalize(mini["Xte"][:, :, two]), mini["yte"][:, 1], mini["gte"]
+    Xte, yte, gte = mechlib.normalize(mini["Xte"][:, :, two]), mini["yte"][:, ti], mini["gte"]
     base_mae = float(np.abs(yte - ytr.mean()).mean())
     print(f"[data] train {len(Xtr)} (deep file), audit {len(Xte)} segments / {len(np.unique(gte))} "
           f"patients (mini file); predict-the-mean MAE {base_mae:.2f}", flush=True)
 
-    res = {"baseline_mae": base_mae, "models": {}}
+    res = {"target": args.target, "baseline_mae": base_mae, "models": {}}
     res["data"] = data_slopes([deep[k] for k in ("Xtr", "Xva", "Xte")],
                               [deep[k] for k in ("ytr", "yva", "yte")],
-                              [deep[k] for k in ("gtr", "gva", "gte")], fs)
+                              [deep[k] for k in ("gtr", "gva", "gte")], fs, ti)
 
     base_pat, rows = shifted_inputs(Xte, fs)
     med, b0 = float(np.nanmedian(base_pat)), float(yte[np.isfinite(base_pat)].mean())
@@ -179,20 +184,22 @@ def main():
         audit(name, ctl)
 
     nets = {}
-    ck = torch.load(str(DATA / "dbp_transformer.pt"), map_location=DEV, weights_only=False)
-    net0 = mechlib.WaveTransformer(**ck["config"]).to(DEV); net0.load_state_dict(ck["state_dict"])
-    nets["original"] = net0
+    if args.target == "dbp":
+        ck = torch.load(str(DATA / "dbp_transformer.pt"), map_location=DEV, weights_only=False)
+        net0 = mechlib.WaveTransformer(**ck["config"]).to(DEV); net0.load_state_dict(ck["state_dict"])
+        nets["original"] = net0
     for s in range(args.seeds):
         net, hist = train(Xtr, ytr, Xva, yva, seed=s)
         torch.save({"state_dict": net.state_dict(), "history": hist, "config": net.cfg},
-                   DATA / f"dbp_transformer_seed{s}.pt")
+                   DATA / f"{args.target}_transformer_seed{s}.pt")
         nets[f"seed{s}"] = net
     for name, net in nets.items():
         mae = float(np.abs(predict(net, Xte) - yte).mean())
         audit(name, lambda mode, net=net: [predict(net, rw["X"]) for rw in rows[mode]], mae)
 
-    (DATA / "real_audit_controls.json").write_text(json.dumps(res, indent=1))
-    print("[done] data/real_audit_controls.json")
+    out = DATA / f"real_audit_controls{suffix}.json"
+    out.write_text(json.dumps(res, indent=1))
+    print(f"[done] {out.relative_to(ROOT)}")
 
 
 if __name__ == "__main__":
