@@ -1,0 +1,168 @@
+{
+ "dataset": "vitaldb",
+ "timing_ms": {
+  "ppg_pat_median": 649.0949578368508,
+  "abp_pat_median": 171.79359207110247,
+  "ppg_minus_abp_median": 476.0758325091997,
+  "ppg_minus_abp_iqr": [
+   460.7336331719878,
+   490.1874151038154
+  ]
+ },
+ "L0 all": {
+  "segments": 16253,
+  "PPG_DBP": {
+   "n_patients": 600,
+   "frac_negative": 0.7383333333333333,
+   "p_sign": 1.650713398044056e-32,
+   "median_slope": -0.06491891853896367,
+   "noise_ceiling": 0.8330666811069002,
+   "frac_negative_theilsen": 0.7566666666666667,
+   "median_theilsen": -0.09301705972410247
+  },
+  "PPG_SBP": {
+   "n_patients": 600,
+   "frac_negative": 0.79,
+   "p_sign": 2.2033108580437695e-48,
+   "median_slope": -0.24227726374945424,
+   "noise_ceiling": 0.9433378821302881,
+   "frac_negative_theilsen": 0.855,
+   "median_theilsen": -0.26711974734389765
+  },
+  "ABP_DBP": {
+   "n_patients": 600,
+   "frac_negative": 0.7016666666666667,
+   "p_sign": 1.9028310376957662e-23,
+   "median_slope": -0.13030682735040483,
+   "noise_ceiling": 0.87694405517305,
+   "frac_negative_theilsen": 0.7316666666666667,
+   "median_theilsen": -0.16304213086467215
+  },
+  "ABP_SBP": {
+   "n_patients": 600,
+   "frac_negative": 0.84,
+   "p_sign": 9.756070157218046e-68,
+   "median_slope": -0.4650464705327244,
+   "noise_ceiling": 0.9673018106447102,
+   "frac_negative_theilsen": 0.8716666666666667,
+   "median_theilsen": -0.5389165222873811
+  }
+ },
+ "L1 clean beats": {
+  "segments": 13760,
+  "PPG_DBP": {
+   "n_patients": 582,
+   "frac_negative": 0.7474226804123711,
+   "p_sign": 5.082317212239851e-34,
+   "median_slope": -0.08829797609226961,
+   "noise_ceiling": 0.8509679029383826,
+   "frac_negative_theilsen": 0.7319587628865979,
+   "median_theilsen": -0.09875780544222229
+  },
+  "PPG_SBP": {
+   "n_patients": 582,
+   "frac_negative": 0.8213058419243986,
+   "p_sign": 3.0863491855367135e-58,
+   "median_slope": -0.2748230715554677,
+   "noise_ceiling": 0.9411279939601058,
+   "frac_negative_theilsen": 0.8333333333333334,
+   "median_theilsen": -0.2791855798992385
+  },
+  "ABP_DBP": {
+   "n_patients": 582,
+   "frac_negative": 0.718213058419244,
+   "p_sign": 1.5134765031166808e-26,
+   "median_slope": -0.17875535629626277,
+   "noise_ceiling": 0.8979980126254737,
+   "frac_negative_theilsen": 0.7457044673539519,
+   "median_theilsen": -0.1928386520071702
+  },
+  "ABP_SBP": {
+   "n_patients": 582,
+   "frac_negative": 0.8762886597938144,
+   "p_sign": 2.912069318530953e-82,
+   "median_slope": -0.5456163574361328,
+   "noise_ceiling": 0.9655832020240835,
+   "frac_negative_theilsen": 0.8642611683848798,
+   "median_theilsen": -0.562947984494593
+  }
+ },
+ "L2 ABP agrees": {
+  "segments": 12084,
+  "PPG_DBP": {
+   "n_patients": 579,
+   "frac_negative": 0.7461139896373057,
+   "p_sign": 1.7005997513606593e-33,
+   "median_slope": -0.12554092742736803,
+   "noise_ceiling": 0.874401220895009,
+   "frac_negative_theilsen": 0.7271157167530224,
+   "median_theilsen": -0.11702486571367636
+  },
+  "PPG_SBP": {
+   "n_patients": 579,
+   "frac_negative": 0.8670120898100173,
+   "p_sign": 2.2009969911149528e-77,
+   "median_slope": -0.3490553039645094,
+   "noise_ceiling": 0.9497212783311592,
+   "frac_negative_theilsen": 0.8497409326424871,
+   "median_theilsen": -0.3323066150679742
+  },
+  "ABP_DBP": {
+   "n_patients": 579,
+   "frac_negative": 0.7392055267702936,
+   "p_sign": 1.1916940064108523e-31,
+   "median_slope": -0.20299670897530167,
+   "noise_ceiling": 0.9065929811270328,
+   "frac_negative_theilsen": 0.7564766839378239,
+   "median_theilsen": -0.19428661696617514
+  },
+  "ABP_SBP": {
+   "n_patients": 579,
+   "frac_negative": 0.8739205526770294,
+   "p_sign": 1.0918321019113751e-80,
+   "median_slope": -0.5841110459504935,
+   "noise_ceiling": 0.9657204419660147,
+   "frac_negative_theilsen": 0.8670120898100173,
+   "median_theilsen": -0.5926249805006065
+  }
+ },
+ "L3 BP varies": {
+  "segments": 11750,
+  "PPG_DBP": {
+   "n_patients": 549,
+   "frac_negative": 0.7449908925318761,
+   "p_sign": 1.5129874571438703e-31,
+   "median_slope": -0.13297430172004843,
+   "noise_ceiling": 0.8863613529655398,
+   "frac_negative_theilsen": 0.7249544626593807,
+   "median_theilsen": -0.12129415907121219
+  },
+  "PPG_SBP": {
+   "n_patients": 549,
+   "frac_negative": 0.8633879781420765,
+   "p_sign": 7.610872718093548e-72,
+   "median_slope": -0.35734333643639554,
+   "noise_ceiling": 0.9546163178297734,
+   "frac_negative_theilsen": 0.8561020036429873,
+   "median_theilsen": -0.3438120274792368
+  },
+  "ABP_DBP": {
+   "n_patients": 549,
+   "frac_negative": 0.7431693989071039,
+   "p_sign": 4.4104324359989816e-31,
+   "median_slope": -0.20535225923386727,
+   "noise_ceiling": 0.9111437221278179,
+   "frac_negative_theilsen": 0.7577413479052824,
+   "median_theilsen": -0.20825928549854728
+  },
+  "ABP_SBP": {
+   "n_patients": 549,
+   "frac_negative": 0.8724954462659381,
+   "p_sign": 6.293767282231152e-76,
+   "median_slope": -0.6062974281388619,
+   "noise_ceiling": 0.9711912659081231,
+   "frac_negative_theilsen": 0.8688524590163934,
+   "median_theilsen": -0.5941718926810297
+  }
+ }
+}

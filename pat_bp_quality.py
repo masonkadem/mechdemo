@@ -81,7 +81,7 @@ def _metrics_chunk(args):
     return [segment_metrics(x[:, ECG], x[:, PPG], x[:, ABP], fs) for x in X]
 
 
-def load(dataset, mimic_root):
+def load(dataset, mimic_root, max_patients=None):
     """(X (N, L, 3) = [ECG, PPG, ABP], Y (N, 2) = [SBP, DBP], patient ids, fs)."""
     if dataset == "vitaldb":                    # 10 s segments, surgical (SNUH)
         d = mechlib.load_mini(str(DATA / "vitaldb_mini_deep.npz"))
@@ -90,7 +90,7 @@ def load(dataset, mimic_root):
         g = np.concatenate([d[k] for k in ("gtr", "gva", "gte")])
         return X, Y, g, int(d["fs"])
     import physics_audit as pa                  # 30 s segments, ICU (BIDMC), MIMIC-BP layout
-    m = pa.load_mimic_bp(mimic_root, channels=("ecg", "ppg", "abp"))
+    m = pa.load_mimic_bp(mimic_root, channels=("ecg", "ppg", "abp"), max_patients=max_patients)
     return m["X"].astype(float), m["y"], m["g"], 125
 
 
@@ -99,9 +99,10 @@ def main():
     ap.add_argument("--dataset", choices=["vitaldb", "mimic"], default="vitaldb")
     ap.add_argument("--mimic-root", default=str(ROOT.parent / "BP"))
     ap.add_argument("--workers", type=int, default=max((os.cpu_count() or 2) - 2, 1))
+    ap.add_argument("--max-patients", type=int, default=0, help="MIMIC only: random subset; 0 = all")
     args = ap.parse_args()
 
-    X, Y, g, fs = load(args.dataset, args.mimic_root)
+    X, Y, g, fs = load(args.dataset, args.mimic_root, args.max_patients or None)
     print(f"[data] {args.dataset}: {len(X)} segments of {X.shape[1] / fs:.0f} s, "
           f"{len(np.unique(g))} patients", flush=True)
     chunks = [(X[i:i + 500], fs) for i in range(0, len(X), 500)]

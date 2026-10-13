@@ -1,10 +1,13 @@
-"""fig_main.py -- compact Nature-style main figure (panel letters kept from the full version):
-  a  small color SBP/DBP violins (distribution shift)
+"""fig_main.py -- datasets, accuracy in and out of distribution, and calibration burden:
+  a  SBP/DBP violins per dataset (distribution shift)
   b  dataset table (age = median[5-95])
-  d  ID vs OOD DBP table (deep + LightGBM)
-  e  mechanism-sensitivity vs OOD scatter
-  f  linear-probe bars: cardiac period vs PAT
-  g  calibration burden
+  c  DBP MAE in distribution (VitalDB) and out of distribution (MIMIC-BP), with the
+     predict-the-training-mean row: on MIMIC no model beats it, so that column ranks how flat a
+     model's predictions are under distribution shift, not mechanism
+  d  calibration burden
+
+The mechanism panels of the earlier version (audit sensitivity vs OOD robustness; probe bars)
+were built on the old PAT detector and are superseded by fig_audit.py and fig_targets.py.
 """
 import json
 from pathlib import Path
@@ -79,10 +82,10 @@ def main():
     e = json.loads((ROOT / "data" / "ood_benchmark_ecgppg_full.json").read_text())["models"]
     disp0 = {"lenet1d": "LeNet", "inception1d": "Incep", "xresnet1d50": "XR50",
              "xresnet1d101": "XR101", "transformer": "Trans"}
-    fig = plt.figure(figsize=(11.5, 12.0))
-    # rows: [a violins + b table] / [d DBP table + e OOD scatter] / [f probe bars + g calibration]
-    gs = fig.add_gridspec(3, 2, height_ratios=[0.85, 1.2, 1.0],
-                          width_ratios=[1.1, 1.1], hspace=0.55, wspace=0.3)
+    fig = plt.figure(figsize=(11.5, 8.2))
+    # rows: [a violins + b table] / [c DBP table + d calibration]
+    gs = fig.add_gridspec(2, 2, height_ratios=[0.85, 1.2],
+                          width_ratios=[1.1, 1.1], hspace=0.45, wspace=0.3)
 
     # ---- a: violins (top-left) ----
     gsa = gs[0, 0].subgridspec(1, 2, wspace=0.35)
@@ -154,64 +157,23 @@ def main():
         ["LightGBM single tree, 4 feat", "~190 par", "8.92", "12.24"],
         ["LightGBM single tree, PAT only", "~190 par", "9.34", "10.96"],
     ]
+    # the reference every row must beat: a constant at the VitalDB training mean
+    tr_mean = float(recs[0][7][:, 1].mean())
+    id_const = float(np.abs(recs[1][7][:, 1] - tr_mean).mean())
+    ood_const = float(np.abs(recs[2][7][:, 1] - tr_mean).mean())
+    erows2.append(["Predict the training mean", "--", f"{id_const:.2f}", f"{ood_const:.2f}"])
     table(fig.add_subplot(gs[1, 0]),
           ["Model", "size", "ID", "OOD"],
           erows2, [0.0, 0.60, 0.78, 0.95],
           ["left", "right", "right", "right"], {0},
-          "DBP MAE (mmHg): ID VitalDB, OOD MIMIC-BP", "d", fs=6.9)
+          "DBP MAE (mmHg): ID VitalDB, OOD MIMIC-BP", "c", fs=6.9)
 
-    disp = disp0
-    # ---- e: OOD penalty vs mechanism scatter (middle-right, square) ----
-    axe = fig.add_subplot(gs[1, 1])
-    # Slopes come from fig_panel_e.py, which recomputes the audit with the `second_deriv`
-    # arrival-time estimator. That estimator is used because it ties for the best agreement with
-    # invasive arterial arrival time (r = +0.21 within subject, on 100% of segments), a criterion
-    # fixed before any of these correlations were computed. The previously plotted numbers came
-    # from the NaN-imputing audit via the tangent-foot estimator, which scores r = 0.03 against
-    # the same ground truth and gives a positive (wrong-signed) correlation here.
-    pe = json.loads((ROOT / "data" / "panel_e.json").read_text())
-    absl = [abs(v) * 1000.0 for v in pe["slopes"][pe["primary"]]]      # mmHg per second
-    gap = pe["ood_penalty"]
-    r = pe["r_by_estimator"][pe["primary"]]
-    b0, a0 = np.polyfit(absl, gap, 1)
-    xs = np.linspace(min(absl) * 0.9, max(absl) * 1.06, 30)
-    axe.plot(xs, a0 + b0 * xs, "k--", lw=1.1, label=f"r = {r:.2f}")
-    for xi, yi, n in zip(absl, gap, pe["models"]):
-        axe.scatter(xi, yi, s=80, color=NAVY, edgecolor="black", lw=1, zorder=3)
-        axe.annotate(disp[n], (xi, yi), fontsize=6.8, xytext=(4, 4), textcoords="offset points")
-    axe.set_xlabel("roll-audit sensitivity  |dDBP/dΔ|  (mmHg/s)", fontsize=8.5)
-    axe.set_ylabel("OOD penalty (mmHg)", fontsize=8.5); axe.tick_params(labelsize=7.5)
-    axe.legend(frameon=False, fontsize=8.5, loc="upper right")
-    axe.spines[["top", "right"]].set_visible(False); axe.set_box_aspect(0.85)
-    axe.text(-0.24, 1.04, "e", transform=axe.transAxes, fontsize=13, fontweight="bold")
-    axe.set_title("Mechanism vs OOD robustness", fontsize=9, loc="left")
-
-    # ---- f: probe summary bars (bottom-left): PAT vs period decodable per model ----
-    axf = fig.add_subplot(gs[2, 0])
-    ps = json.loads((ROOT / "data" / "_probe_summary.json").read_text())
-    xn = np.arange(len(names)); w = 0.38
-    pat = [ps[n]["pat"] for n in names]; per = [ps[n]["period"] for n in names]
-    axf.bar(xn - w / 2, per, w, color="#c1543b", label="cardiac period (shortcut)")
-    axf.bar(xn + w / 2, pat, w, color="#2f4b7c", label="PAT (arrival time)")
-    # roll slope above the PAT bar, using the same corrected values as panel e
-    pe_sl = {n: abs(v) * 1000.0 for n, v in zip(pe["models"], pe["slopes"][pe["primary"]])}
-    for i, n in enumerate(names):
-        axf.text(i + w / 2, pat[i] + 0.02, f"{pe_sl[n]:.0f}", ha="center", fontsize=6.8,
-                 color="#2f4b7c", fontweight="bold")
-    axf.set_xticks(xn, [disp[n] for n in names], fontsize=7.5)
-    axf.set_ylabel("max linear-probe $R^2$", fontsize=8.5); axf.set_ylim(0, 0.98)
-    axf.tick_params(labelsize=7.5); axf.legend(frameon=False, fontsize=7.5, loc="upper right")
-    axf.spines[["top", "right"]].set_visible(False); axf.set_box_aspect(0.85)
-    axf.text(-0.2, 1.04, "f", transform=axf.transAxes, fontsize=13, fontweight="bold")
-    axf.set_title("Shortcuts", fontsize=9, loc="left")
-
-
-    # ---- g: calibration burden (bottom, spanning) ----
+    # ---- d: calibration burden (bottom-right) ----
     # A calibration anchor is one reference cuff reading taken from the wearer. With k anchors the
     # device fits a single per-subject offset and is scored on held-out segments; k = 0 is the
-    # calibration-free case. This is a different question from panel d -- "how accurate" versus
+    # calibration-free case. This is a different question from panel c -- "how accurate" versus
     # "how much must the user do before it works" -- and the two order the models differently.
-    axg = fig.add_subplot(gs[2, 1])
+    axg = fig.add_subplot(gs[1, 1])
     cam = json.loads((ROOT / "data" / "calib_all_models.json").read_text())
     curves = {k: {int(a): b for a, b in v["curve"].items()}
               for k, v in cam.items() if isinstance(v, dict) and "curve" in v}
@@ -235,8 +197,8 @@ def main():
     axg.tick_params(labelsize=7.5)
     axg.legend(fontsize=7.5, frameon=False, loc="upper right")
     axg.spines[["top", "right"]].set_visible(False)
-    axg.set_box_aspect(0.85)          # same square as e and f, so the panel letters line up
-    axg.text(-0.24, 1.04, "g", transform=axg.transAxes, fontsize=13, fontweight="bold")
+    axg.set_box_aspect(0.85)
+    axg.text(-0.24, 1.04, "d", transform=axg.transAxes, fontsize=13, fontweight="bold")
     axg.set_title("Calibration burden", fontsize=9, loc="left")
 
     fig.savefig(FIG / "fig_main.png", dpi=185, bbox_inches="tight")
